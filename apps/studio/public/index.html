@@ -17,10 +17,17 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="secondary" id="exportButton" type="button">Export</button>
-          <button class="secondary" id="importButton" type="button">Import</button>
-          <button class="secondary" id="refreshButton" type="button">Refresh</button>
-          <button class="primary" id="runButton" type="button">Run Workflow</button>
+          <label class="language-control" for="languageSelect">
+            <span data-i18n="language">Language</span>
+            <select id="languageSelect" aria-label="Language">
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+            </select>
+          </label>
+          <button class="secondary" id="exportButton" type="button" data-i18n="export">Export</button>
+          <button class="secondary" id="importButton" type="button" data-i18n="import">Import</button>
+          <button class="secondary" id="refreshButton" type="button" data-i18n="refresh">Refresh</button>
+          <button class="primary" id="runButton" type="button" data-i18n="runWorkflow">Run Workflow</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
         </div>
       </header>
@@ -28,15 +35,15 @@
       <main class="workspace">
         <aside class="sidebar">
           <div class="section-head">
-            <h2>Workflows</h2>
-            <button class="icon-button" id="newWorkflowButton" type="button" aria-label="New workflow">New</button>
+            <h2 data-i18n="workflows">Workflows</h2>
+            <button class="icon-button" id="newWorkflowButton" type="button" aria-label="New workflow" data-i18n="new">New</button>
           </div>
           <div id="workflowList" class="workflow-list"></div>
 
           <div class="sidebar-block">
             <div class="section-head">
-              <h2>Profiles</h2>
-              <button class="icon-button" id="newProfileButton" type="button" aria-label="New profile">New</button>
+              <h2 data-i18n="profiles">Profiles</h2>
+              <button class="icon-button" id="newProfileButton" type="button" aria-label="New profile" data-i18n="new">New</button>
             </div>
             <div id="profileList" class="profile-list"></div>
           </div>
@@ -45,28 +52,28 @@
         <section class="editor-pane">
           <div class="split-head">
             <div>
-              <label for="workflowName">Name</label>
+              <label for="workflowName" data-i18n="name">Name</label>
               <input id="workflowName" autocomplete="off" />
             </div>
             <div>
-              <label for="workflowId">ID</label>
+              <label for="workflowId" data-i18n="id">ID</label>
               <input id="workflowId" autocomplete="off" />
             </div>
           </div>
-          <label for="workflowDescription">Description</label>
+          <label for="workflowDescription" data-i18n="description">Description</label>
           <input id="workflowDescription" autocomplete="off" />
 
           <div class="tabs" role="tablist">
-            <button class="tab active" data-tab="workflow" type="button">Workflow</button>
-            <button class="tab" data-tab="run" type="button">Run Config</button>
+            <button class="tab active" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
+            <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
           </div>
 
           <div class="tab-panel active" id="workflowPanel">
             <div class="section-head compact">
-              <h2>Definition</h2>
+              <h2 data-i18n="definition">Definition</h2>
               <div class="button-row">
-                <button class="secondary" id="validateWorkflowButton" type="button">Validate</button>
-                <button class="secondary" id="saveWorkflowButton" type="button">Save</button>
+                <button class="secondary" id="validateWorkflowButton" type="button" data-i18n="validate">Validate</button>
+                <button class="secondary" id="saveWorkflowButton" type="button" data-i18n="save">Save</button>
               </div>
             </div>
             <textarea id="workflowJson" spellcheck="false"></textarea>
@@ -75,78 +82,78 @@
           <div class="tab-panel" id="runPanel">
             <div class="run-grid">
               <div>
-                <label for="runMode">Mode</label>
+                <label for="runMode" data-i18n="mode">Mode</label>
                 <select id="runMode">
                   <option value="dry-run">dry-run</option>
                   <option value="playwright">playwright</option>
                 </select>
               </div>
               <div>
-                <label for="profileSelect">Profile</label>
+                <label for="profileSelect" data-i18n="profile">Profile</label>
                 <select id="profileSelect"></select>
               </div>
               <div>
-                <label for="approvalToggle">Approval Gates</label>
+                <label for="approvalToggle" data-i18n="approvalGates">Approval Gates</label>
                 <select id="approvalToggle">
-                  <option value="keep">use context</option>
-                  <option value="approve">approve all sample gates</option>
-                  <option value="block">block approval gates</option>
+                  <option value="keep" data-i18n="approvalKeep">use context</option>
+                  <option value="approve" data-i18n="approvalApprove">approve all sample gates</option>
+                  <option value="block" data-i18n="approvalBlock">block approval gates</option>
                 </select>
               </div>
             </div>
             <div class="operation-modes">
-              <label for="operationModesJson">Operation Modes</label>
+              <label for="operationModesJson" data-i18n="operationModes">Operation Modes</label>
               <textarea id="operationModesJson" spellcheck="false"></textarea>
             </div>
             <div class="triple-editors">
               <div>
-                <label for="runInputJson">Input</label>
+                <label for="runInputJson" data-i18n="input">Input</label>
                 <textarea id="runInputJson" spellcheck="false"></textarea>
               </div>
               <div>
-                <label for="runContextJson">Context</label>
+                <label for="runContextJson" data-i18n="context">Context</label>
                 <textarea id="runContextJson" spellcheck="false"></textarea>
               </div>
               <div>
-                <label for="driverConfigJson">Driver</label>
+                <label for="driverConfigJson" data-i18n="driver">Driver</label>
                 <textarea id="driverConfigJson" spellcheck="false"></textarea>
               </div>
             </div>
 
             <div class="profile-editor">
               <div class="section-head compact">
-                <h2>Profile Details</h2>
+                <h2 data-i18n="profileDetails">Profile Details</h2>
                 <div class="button-row">
-                  <button class="secondary" id="checkProfileButton" type="button">Check Session</button>
-                  <button class="secondary" id="saveProfileButton" type="button">Save Profile</button>
+                  <button class="secondary" id="checkProfileButton" type="button" data-i18n="checkSession">Check Session</button>
+                  <button class="secondary" id="saveProfileButton" type="button" data-i18n="saveProfile">Save Profile</button>
                 </div>
               </div>
               <div class="profile-grid">
                 <div>
-                  <label for="profileId">ID</label>
+                  <label for="profileId" data-i18n="id">ID</label>
                   <input id="profileId" />
                 </div>
                 <div>
-                  <label for="profileName">Name</label>
+                  <label for="profileName" data-i18n="name">Name</label>
                   <input id="profileName" />
                 </div>
                 <div>
-                  <label for="profileMode">Mode</label>
+                  <label for="profileMode" data-i18n="mode">Mode</label>
                   <select id="profileMode">
                     <option value="dry-run">dry-run</option>
                     <option value="playwright">playwright</option>
                   </select>
                 </div>
                 <div>
-                  <label for="profilePlatform">Platform</label>
+                  <label for="profilePlatform" data-i18n="platform">Platform</label>
                   <input id="profilePlatform" />
                 </div>
                 <div>
-                  <label for="profileAccountLabel">Account Label</label>
+                  <label for="profileAccountLabel" data-i18n="accountLabel">Account Label</label>
                   <input id="profileAccountLabel" />
                 </div>
                 <div>
-                  <label for="profileLoginState">Login State</label>
+                  <label for="profileLoginState" data-i18n="loginState">Login State</label>
                   <select id="profileLoginState">
                     <option value="unchecked">unchecked</option>
                     <option value="authenticated">authenticated</option>
@@ -155,7 +162,7 @@
                   </select>
                 </div>
                 <div>
-                  <label for="profileStatus">Status</label>
+                  <label for="profileStatus" data-i18n="status">Status</label>
                   <select id="profileStatus">
                     <option value="ready">ready</option>
                     <option value="busy">busy</option>
@@ -164,19 +171,19 @@
                   </select>
                 </div>
                 <div>
-                  <label for="profileDir">Profile Dir</label>
+                  <label for="profileDir" data-i18n="profileDir">Profile Dir</label>
                   <input id="profileDir" />
                 </div>
                 <div>
-                  <label for="profileCheckUrl">Session Check URL</label>
+                  <label for="profileCheckUrl" data-i18n="sessionCheckUrl">Session Check URL</label>
                   <input id="profileCheckUrl" />
                 </div>
                 <div>
-                  <label for="profileAccountSelector">Account Selector</label>
+                  <label for="profileAccountSelector" data-i18n="accountSelector">Account Selector</label>
                   <input id="profileAccountSelector" />
                 </div>
                 <div>
-                  <label for="profileRate">Max Per Minute</label>
+                  <label for="profileRate" data-i18n="maxPerMinute">Max Per Minute</label>
                   <input id="profileRate" type="number" min="0" />
                 </div>
               </div>
@@ -186,35 +193,35 @@
 
         <aside class="inspector">
           <div class="section-head">
-            <h2>Runs</h2>
-            <span id="queueStatus" class="pill">idle</span>
+            <h2 data-i18n="runs">Runs</h2>
+            <span id="queueStatus" class="pill" data-i18n="idle">idle</span>
           </div>
           <div id="runList" class="run-list"></div>
 
           <div class="inspector-section">
             <div class="section-head compact">
-              <h2>Selected Run</h2>
-              <span id="selectedRunStatus" class="pill muted">none</span>
+              <h2 data-i18n="selectedRun">Selected Run</h2>
+              <span id="selectedRunStatus" class="pill muted" data-i18n="none">none</span>
             </div>
             <div class="button-row run-actions">
-              <button class="secondary" id="cancelRunButton" type="button">Cancel</button>
-              <button class="secondary" id="retryRunButton" type="button">Retry</button>
+              <button class="secondary" id="cancelRunButton" type="button" data-i18n="cancel">Cancel</button>
+              <button class="secondary" id="retryRunButton" type="button" data-i18n="retry">Retry</button>
             </div>
             <pre id="runSummary" class="summary-box"></pre>
           </div>
 
           <div class="inspector-section">
-            <h2>Evidence</h2>
+            <h2 data-i18n="evidence">Evidence</h2>
             <div id="eventTimeline" class="timeline"></div>
           </div>
 
           <div class="inspector-section">
-            <h2>Artifacts</h2>
+            <h2 data-i18n="artifacts">Artifacts</h2>
             <div id="artifactList" class="artifact-list"></div>
           </div>
 
           <div class="inspector-section">
-            <h2>Audit</h2>
+            <h2 data-i18n="audit">Audit</h2>
             <div id="auditList" class="timeline"></div>
           </div>
         </aside>

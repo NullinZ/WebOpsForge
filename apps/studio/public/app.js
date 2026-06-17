@@ -7,10 +7,180 @@ const state = {
   selectedProfileId: null,
   selectedRunId: null,
   runtime: null,
+  language: localStorage.getItem("webops-forge-language") || "en",
   polling: null
 };
 
+const I18N = {
+  en: {
+    accountLabel: "Account Label",
+    accountSelector: "Account Selector",
+    approvalApprove: "approve all sample gates",
+    approvalBlock: "block approval gates",
+    approvalGates: "Approval Gates",
+    approvalKeep: "use context",
+    artifacts: "Artifacts",
+    audit: "Audit",
+    cancel: "Cancel",
+    checkSession: "Check Session",
+    context: "Context",
+    dataDir: "data: {path}",
+    definition: "Definition",
+    description: "Description",
+    driver: "Driver",
+    evidence: "Evidence",
+    export: "Export",
+    exportReady: "Export ready",
+    import: "Import",
+    importedBundle: "Imported {workflows} workflows and {profiles} profiles",
+    input: "Input",
+    language: "Language",
+    loginState: "Login State",
+    maxPerMinute: "Max Per Minute",
+    mode: "Mode",
+    name: "Name",
+    new: "New",
+    newProfile: "New Profile",
+    newWorkflow: "New Workflow",
+    noArtifacts: "No artifacts",
+    noAuditRecords: "No audit records",
+    noProfile: "no profile",
+    none: "none",
+    operationModes: "Operation Modes",
+    platform: "Platform",
+    profile: "Profile",
+    profileDetails: "Profile Details",
+    profileDir: "Profile Dir",
+    profileIdRequired: "Profile ID is required",
+    profileSaved: "Profile saved",
+    profiles: "Profiles",
+    refresh: "Refresh",
+    retry: "Retry",
+    retryQueued: "Retry queued",
+    runConfig: "Run Config",
+    runQueued: "Run queued",
+    runWorkflow: "Run Workflow",
+    runs: "Runs",
+    save: "Save",
+    saveProfile: "Save Profile",
+    selectedRun: "Selected Run",
+    sessionCheckUrl: "Session Check URL",
+    sessionResult: "Session {state}{account}",
+    status: "Status",
+    stepCount: "{count} steps",
+    validate: "Validate",
+    workflow: "Workflow",
+    workflowSaved: "Workflow saved",
+    workflowValid: "Workflow valid: {count} steps",
+    workflows: "Workflows",
+    queueIdle: "idle",
+    queueQueued: "{count} queued",
+    queueRunning: "{count} running"
+  },
+  zh: {
+    accountLabel: "账号标签",
+    accountSelector: "账号选择器",
+    approvalApprove: "通过全部示例审批",
+    approvalBlock: "阻断审批节点",
+    approvalGates: "审批闸口",
+    approvalKeep: "使用上下文",
+    artifacts: "产物",
+    audit: "审计",
+    cancel: "取消",
+    checkSession: "检查会话",
+    context: "上下文",
+    dataDir: "数据目录：{path}",
+    definition: "定义",
+    description: "描述",
+    driver: "驱动配置",
+    evidence: "证据",
+    export: "导出",
+    exportReady: "导出已准备好",
+    import: "导入",
+    importedBundle: "已导入 {workflows} 个工作流和 {profiles} 个 Profile",
+    input: "输入",
+    language: "语言",
+    loginState: "登录态",
+    maxPerMinute: "每分钟上限",
+    mode: "模式",
+    name: "名称",
+    new: "新建",
+    newProfile: "新建 Profile",
+    newWorkflow: "新建工作流",
+    noArtifacts: "暂无产物",
+    noAuditRecords: "暂无审计记录",
+    noProfile: "不使用 Profile",
+    none: "无",
+    operationModes: "动作执行方式",
+    platform: "平台",
+    profile: "Profile",
+    profileDetails: "Profile 详情",
+    profileDir: "Profile 目录",
+    profileIdRequired: "必须填写 Profile ID",
+    profileSaved: "Profile 已保存",
+    profiles: "Profiles",
+    refresh: "刷新",
+    retry: "重试",
+    retryQueued: "重试已入队",
+    runConfig: "运行配置",
+    runQueued: "运行已入队",
+    runWorkflow: "运行工作流",
+    runs: "运行记录",
+    save: "保存",
+    saveProfile: "保存 Profile",
+    selectedRun: "当前运行",
+    sessionCheckUrl: "会话检查 URL",
+    sessionResult: "会话 {state}{account}",
+    status: "状态",
+    stepCount: "{count} 步",
+    validate: "校验",
+    workflow: "工作流",
+    workflowSaved: "工作流已保存",
+    workflowValid: "工作流有效：{count} 步",
+    workflows: "工作流",
+    queueIdle: "空闲",
+    queueQueued: "{count} 个排队中",
+    queueRunning: "{count} 个运行中"
+  }
+};
+
+const STATUS_LABELS = {
+  en: {
+    authenticated: "authenticated",
+    blocked: "blocked",
+    busy: "busy",
+    canceled: "canceled",
+    cancel_requested: "cancel requested",
+    completed: "completed",
+    disabled: "disabled",
+    failed: "failed",
+    "logged-out": "logged out",
+    queued: "queued",
+    ready: "ready",
+    running: "running",
+    unchecked: "unchecked",
+    unknown: "unknown"
+  },
+  zh: {
+    authenticated: "已登录",
+    blocked: "已阻断",
+    busy: "占用中",
+    canceled: "已取消",
+    cancel_requested: "取消中",
+    completed: "已完成",
+    disabled: "已禁用",
+    failed: "失败",
+    "logged-out": "未登录",
+    queued: "排队中",
+    ready: "就绪",
+    running: "运行中",
+    unchecked: "未检查",
+    unknown: "未知"
+  }
+};
+
 const elements = {
+  languageSelect: document.querySelector("#languageSelect"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
   queueStatus: document.querySelector("#queueStatus"),
   workflowList: document.querySelector("#workflowList"),
@@ -47,6 +217,8 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+elements.languageSelect.value = state.language;
+elements.languageSelect.addEventListener("change", () => setLanguage(elements.languageSelect.value));
 document.querySelector("#refreshButton").addEventListener("click", () => refreshAll());
 document.querySelector("#exportButton").addEventListener("click", () => exportBundle());
 document.querySelector("#importButton").addEventListener("click", () => elements.importFile.click());
@@ -64,6 +236,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 });
 
+applyStaticTranslations();
 await refreshAll();
 startPolling();
 
@@ -108,9 +281,13 @@ function render() {
 
 function renderRuntime() {
   if (!state.runtime) return;
-  elements.runtimeStatus.textContent = `data: ${state.runtime.dataDir}`;
+  elements.runtimeStatus.textContent = t("dataDir", { path: state.runtime.dataDir });
   const queue = state.runtime.queue;
-  elements.queueStatus.textContent = queue.active ? `${queue.active} running` : queue.pending ? `${queue.pending} queued` : "idle";
+  elements.queueStatus.textContent = queue.active
+    ? t("queueRunning", { count: queue.active })
+    : queue.pending
+      ? t("queueQueued", { count: queue.pending })
+      : t("queueIdle");
   elements.queueStatus.className = `pill ${queue.active ? "warning" : queue.pending ? "" : "muted"}`;
 }
 
@@ -122,7 +299,7 @@ function renderWorkflows() {
     button.className = `workflow-row ${workflow.id === state.selectedWorkflowId ? "active" : ""}`;
     button.innerHTML = `
       <span class="row-title">${escapeHtml(workflow.name)}</span>
-      <span class="row-meta">${escapeHtml(workflow.workflow.name)} · ${workflow.workflow.steps.length} steps</span>
+      <span class="row-meta">${escapeHtml(workflow.workflow.name)} · ${escapeHtml(t("stepCount", { count: workflow.workflow.steps.length }))}</span>
     `;
     button.addEventListener("click", () => selectWorkflow(workflow.id));
     elements.workflowList.append(button);
@@ -131,7 +308,7 @@ function renderWorkflows() {
 
 function renderProfiles() {
   elements.profileList.innerHTML = "";
-  elements.profileSelect.innerHTML = `<option value="">no profile</option>`;
+  elements.profileSelect.innerHTML = `<option value="">${escapeHtml(t("noProfile"))}</option>`;
   for (const profile of state.profiles) {
     const option = document.createElement("option");
     option.value = profile.id;
@@ -144,7 +321,7 @@ function renderProfiles() {
     const identity = profile.accountLabel || profile.platform || profile.mode;
     button.innerHTML = `
       <span class="row-title">${escapeHtml(profile.name)}</span>
-      <span class="row-meta">${escapeHtml(profile.status)} · ${escapeHtml(profile.loginState ?? "unchecked")} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
+      <span class="row-meta">${escapeHtml(statusLabel(profile.status))} · ${escapeHtml(statusLabel(profile.loginState ?? "unchecked"))} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
     `;
     button.addEventListener("click", () => selectProfile(profile.id));
     elements.profileList.append(button);
@@ -165,7 +342,7 @@ function renderRuns() {
     button.className = `run-row ${run.id === state.selectedRunId ? "active" : ""}`;
     button.innerHTML = `
       <span class="row-title">${escapeHtml(run.workflowName)}</span>
-      <span class="row-meta">${escapeHtml(run.status)} · ${escapeHtml(run.mode)} · ${formatTime(run.queuedAt)}</span>
+      <span class="row-meta">${escapeHtml(statusLabel(run.status))} · ${escapeHtml(run.mode)} · ${formatTime(run.queuedAt)}</span>
     `;
     button.addEventListener("click", () => selectRun(run.id));
     elements.runList.append(button);
@@ -216,7 +393,7 @@ async function selectRun(id) {
 }
 
 function renderRunDetail({ run, events, artifacts }) {
-  elements.selectedRunStatus.textContent = run.status;
+  elements.selectedRunStatus.textContent = statusLabel(run.status);
   elements.selectedRunStatus.className = `pill ${statusClass(run.status)}`;
   elements.runSummary.textContent = formatJson({
     id: run.id,
@@ -246,7 +423,7 @@ function renderRunDetail({ run, events, artifacts }) {
 
   elements.artifactList.innerHTML = "";
   if (artifacts.length === 0) {
-    elements.artifactList.innerHTML = `<div class="event-meta">No artifacts</div>`;
+    elements.artifactList.innerHTML = `<div class="event-meta">${escapeHtml(t("noArtifacts"))}</div>`;
   }
   for (const artifact of artifacts) {
     const row = document.createElement("div");
@@ -262,7 +439,7 @@ function renderRunDetail({ run, events, artifacts }) {
 function renderAudit() {
   elements.auditList.innerHTML = "";
   if (state.audit.length === 0) {
-    elements.auditList.innerHTML = `<div class="event-meta">No audit records</div>`;
+    elements.auditList.innerHTML = `<div class="event-meta">${escapeHtml(t("noAuditRecords"))}</div>`;
   }
   for (const item of state.audit) {
     const row = document.createElement("div");
