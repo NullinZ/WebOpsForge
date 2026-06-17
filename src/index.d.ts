@@ -25,6 +25,7 @@ export type WorkflowAction =
   | "press"
   | "extract"
   | "screenshot"
+  | "approval"
   | "assertText"
   | "checkpoint";
 
@@ -96,6 +97,7 @@ export interface RateLimiter {
 export interface RunnerPolicy {
   beforeStep?(args: { step: NormalizedWorkflowStep; state: RunnerState }): Promise<void> | void;
   afterStep?(args: { step: NormalizedWorkflowStep; state: RunnerState; result: unknown }): Promise<void> | void;
+  requestApproval?(args: { step: NormalizedWorkflowStep; state: RunnerState; approvalName: string }): Promise<{ approved: boolean; approver?: string } | null | undefined> | { approved: boolean; approver?: string } | null | undefined;
 }
 
 export class WebOpsRunner {
@@ -137,6 +139,63 @@ export function createPlaywrightDriver(options?: {
   viewport?: Record<string, number> | null;
   page?: unknown;
 }): Promise<BrowserDriver>;
+
+export interface StudioWorkflowRecord {
+  id: string;
+  name: string;
+  description: string;
+  workflow: NormalizedWorkflow;
+  defaultRun?: {
+    mode?: "dry-run" | "playwright" | string;
+    input?: Record<string, unknown>;
+    context?: Record<string, unknown>;
+    driverConfig?: Record<string, unknown>;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudioRunRecord {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  mode: string;
+  status: "queued" | "running" | "completed" | "blocked" | "failed";
+  input: Record<string, unknown>;
+  context: Record<string, unknown>;
+  driverConfig: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  error: Record<string, unknown> | null;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+  evidenceDir: string;
+}
+
+export class StudioStore {
+  constructor(options?: { dir?: string; clock?: () => Date });
+  dir: string;
+  init(): Promise<void>;
+  listWorkflows(): Promise<StudioWorkflowRecord[]>;
+  getWorkflow(id: string): Promise<StudioWorkflowRecord | null>;
+  saveWorkflow(record: Partial<StudioWorkflowRecord> & { workflow: Workflow | NormalizedWorkflow }): Promise<StudioWorkflowRecord>;
+  deleteWorkflow(id: string): Promise<{ deleted: boolean }>;
+  listRuns(options?: { limit?: number }): Promise<StudioRunRecord[]>;
+  getRun(id: string): Promise<StudioRunRecord | null>;
+  createRun(options: { workflowId: string; mode?: string; input?: Record<string, unknown>; context?: Record<string, unknown>; driverConfig?: Record<string, unknown> }): Promise<StudioRunRecord>;
+  updateRun(id: string, patch: Partial<StudioRunRecord>): Promise<StudioRunRecord>;
+  getRunDirFor(runId: string): string;
+  readRunEvents(runId: string): Promise<Record<string, unknown>[]>;
+  listRunArtifacts(runId: string): Promise<Array<{ name: string; size: number; url: string }>>;
+  getArtifactPath(runId: string, artifactName: string): string;
+  reset(): Promise<void>;
+}
+
+export function createRunQueue(options: { store: StudioStore; concurrency?: number; clock?: () => Date }): {
+  enqueue(runId: string): void;
+  status(): { pending: number; active: number; concurrency: number };
+};
 
 export class WebOpsForgeError extends Error {
   code: string;

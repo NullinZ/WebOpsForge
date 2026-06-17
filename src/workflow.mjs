@@ -8,6 +8,7 @@ const SUPPORTED_ACTIONS = new Set([
   "press",
   "extract",
   "screenshot",
+  "approval",
   "assertText",
   "checkpoint"
 ]);
@@ -20,6 +21,7 @@ const REQUIRED_FIELDS = {
   press: ["key"],
   extract: ["selector", "name"],
   screenshot: ["name"],
+  approval: ["name"],
   assertText: ["selector", "includes"],
   checkpoint: []
 };

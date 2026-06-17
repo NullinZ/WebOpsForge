@@ -124,6 +124,8 @@ export class WebOpsRunner {
         });
       case "screenshot":
         return this.#captureNamedScreenshot(step);
+      case "approval":
+        return this.#requestApproval(step, state);
       case "assertText":
         return this.#assertText(step, timeoutMs);
       case "checkpoint":
@@ -143,6 +145,38 @@ export class WebOpsRunner {
       });
     }
     return { ok: true, selector: step.selector, includes: step.includes };
+  }
+
+  async #requestApproval(step, state) {
+    const approvalName = step.name ?? step.id;
+    const policyDecision = await this.policy?.requestApproval?.({ step, state, approvalName });
+    if (policyDecision?.approved) {
+      return {
+        approved: true,
+        name: approvalName,
+        approver: policyDecision.approver ?? "policy"
+      };
+    }
+
+    const contextApproved = state.context?.approvals?.[approvalName] === true;
+    if (contextApproved) {
+      return {
+        approved: true,
+        name: approvalName,
+        approver: "context"
+      };
+    }
+
+    throw new BrowserBlockedError(`Approval required: ${approvalName}`, {
+      stepId: step.id,
+      reason: "approval_required",
+      recoverable: true,
+      details: {
+        name: approvalName,
+        prompt: step.prompt ?? "",
+        requiredRole: step.requiredRole ?? null
+      }
+    });
   }
 
   async #captureNamedScreenshot(step) {

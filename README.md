@@ -48,10 +48,43 @@ npm run check
 npm run pack:dry-run
 ```
 
+Start the local Studio:
+
+```bash
+npm start
+```
+
+Open:
+
+```text
+http://127.0.0.1:4177
+```
+
 Run the dry-run example:
 
 ```bash
 node examples/dry-run-search.mjs
+```
+
+## WebOps Studio
+
+WebOps Studio is the local commercial-grade control surface for WebOps Forge.
+
+It includes:
+
+- workflow library and JSON editor
+- dry-run and Playwright execution modes
+- run input, context, and driver configuration
+- queued run execution
+- persisted run history
+- evidence timeline
+- artifact links for screenshots and dry-run captures
+- approval gates through the `approval` workflow action
+
+The Studio stores local state in `.webops-forge/` by default. Override it with:
+
+```bash
+WEBOPS_FORGE_DATA_DIR=/secure/path npm start
 ```
 
 ## Quick Start
@@ -121,6 +154,7 @@ Supported actions:
 - `fill`: fill a field.
 - `press`: press a key.
 - `extract`: extract text, value, HTML, or an attribute.
+- `approval`: require a policy or context approval before continuing.
 - `assertText`: fail if expected text is missing.
 - `screenshot`: capture evidence.
 - `checkpoint`: add a named audit marker.
@@ -141,6 +175,23 @@ WebOps Forge includes:
 - `createFileEvidenceStore({ dir })` for JSONL evidence plus artifacts.
 
 Evidence is deliberately structured so operators can see what happened without replaying a whole browser session.
+
+## API Surface
+
+The Studio exposes a local REST API:
+
+- `GET /api/health`
+- `GET /api/runtime`
+- `GET /api/workflows`
+- `POST /api/workflows`
+- `GET /api/workflows/:id`
+- `PUT /api/workflows/:id`
+- `DELETE /api/workflows/:id`
+- `POST /api/workflows/:id/runs`
+- `GET /api/runs`
+- `GET /api/runs/:id`
+- `GET /api/runs/:id/events`
+- `GET /api/runs/:id/artifacts/:name`
 
 ## Safety Boundaries
 

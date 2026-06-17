@@ -7,3 +7,4 @@ dist/
 tmp/
 artifacts/
 events.jsonl
+.webops-forge/

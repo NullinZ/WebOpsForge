@@ -140,3 +140,31 @@ test("writes file evidence records and artifacts", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("blocks approval gates until context approval is present", async () => {
+  const workflow = defineWorkflow({
+    name: "approval-test",
+    steps: [
+      { id: "approval", action: "approval", name: "reviewSearch", prompt: "Review search result" },
+      { id: "done", action: "checkpoint", label: "done" }
+    ]
+  });
+
+  const blockedRunner = new WebOpsRunner({
+    driver: createSearchDriver(),
+    evidenceStore: createMemoryEvidenceStore()
+  });
+  await assert.rejects(
+    blockedRunner.run(workflow, { context: { approvals: {} } }),
+    BrowserBlockedError
+  );
+
+  const approvedRunner = new WebOpsRunner({
+    driver: createSearchDriver(),
+    evidenceStore: createMemoryEvidenceStore()
+  });
+  const result = await approvedRunner.run(workflow, {
+    context: { approvals: { reviewSearch: true } }
+  });
+  assert.equal(result.status, "completed");
+});

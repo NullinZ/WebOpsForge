@@ -6,6 +6,9 @@
   "license": "MIT",
   "main": "./src/index.mjs",
   "types": "./src/index.d.ts",
+  "bin": {
+    "webops-forge-studio": "./bin/webops-forge-studio.mjs"
+  },
   "exports": {
     ".": {
       "types": "./src/index.d.ts",
@@ -14,6 +17,9 @@
   },
   "files": [
     "src",
+    "apps/studio",
+    "bin",
+    "docs",
     "examples",
     "README.md",
     "LICENSE",
@@ -22,6 +28,8 @@
     "SECURITY.md"
   ],
   "scripts": {
+    "start": "node apps/studio/server.mjs",
+    "studio": "node apps/studio/server.mjs",
     "test": "node --test",
     "check": "npm test && node examples/dry-run-search.mjs",
     "pack:dry-run": "npm pack --dry-run"

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebOps Forge Studio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">WF</div>
+          <div>
+            <h1>WebOps Forge</h1>
+            <p id="runtimeStatus">Studio</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="secondary" id="refreshButton" type="button">Refresh</button>
+          <button class="primary" id="runButton" type="button">Run Workflow</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar">
+          <div class="section-head">
+            <h2>Workflows</h2>
+            <button class="icon-button" id="newWorkflowButton" type="button" aria-label="New workflow">New</button>
+          </div>
+          <div id="workflowList" class="workflow-list"></div>
+        </aside>
+
+        <section class="editor-pane">
+          <div class="split-head">
+            <div>
+              <label for="workflowName">Name</label>
+              <input id="workflowName" autocomplete="off" />
+            </div>
+            <div>
+              <label for="workflowId">ID</label>
+              <input id="workflowId" autocomplete="off" />
+            </div>
+          </div>
+          <label for="workflowDescription">Description</label>
+          <input id="workflowDescription" autocomplete="off" />
+
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="workflow" type="button">Workflow</button>
+            <button class="tab" data-tab="run" type="button">Run Config</button>
+          </div>
+
+          <div class="tab-panel active" id="workflowPanel">
+            <div class="section-head compact">
+              <h2>Definition</h2>
+              <button class="secondary" id="saveWorkflowButton" type="button">Save</button>
+            </div>
+            <textarea id="workflowJson" spellcheck="false"></textarea>
+          </div>
+
+          <div class="tab-panel" id="runPanel">
+            <div class="run-grid">
+              <div>
+                <label for="runMode">Mode</label>
+                <select id="runMode">
+                  <option value="dry-run">dry-run</option>
+                  <option value="playwright">playwright</option>
+                </select>
+              </div>
+              <div>
+                <label for="approvalToggle">Approval Gates</label>
+                <select id="approvalToggle">
+                  <option value="keep">use context</option>
+                  <option value="approve">approve all sample gates</option>
+                  <option value="block">block approval gates</option>
+                </select>
+              </div>
+            </div>
+            <div class="triple-editors">
+              <div>
+                <label for="runInputJson">Input</label>
+                <textarea id="runInputJson" spellcheck="false"></textarea>
+              </div>
+              <div>
+                <label for="runContextJson">Context</label>
+                <textarea id="runContextJson" spellcheck="false"></textarea>
+              </div>
+              <div>
+                <label for="driverConfigJson">Driver</label>
+                <textarea id="driverConfigJson" spellcheck="false"></textarea>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="inspector">
+          <div class="section-head">
+            <h2>Runs</h2>
+            <span id="queueStatus" class="pill">idle</span>
+          </div>
+          <div id="runList" class="run-list"></div>
+
+          <div class="inspector-section">
+            <div class="section-head compact">
+              <h2>Selected Run</h2>
+              <span id="selectedRunStatus" class="pill muted">none</span>
+            </div>
+            <pre id="runSummary" class="summary-box"></pre>
+          </div>
+
+          <div class="inspector-section">
+            <h2>Evidence</h2>
+            <div id="eventTimeline" class="timeline"></div>
+          </div>
+
+          <div class="inspector-section">
+            <h2>Artifacts</h2>
+            <div id="artifactList" class="artifact-list"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
