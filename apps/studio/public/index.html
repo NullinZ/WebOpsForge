@@ -65,6 +65,7 @@
 
           <div class="tabs" role="tablist">
             <button class="tab active" data-tab="graph" type="button" data-i18n="graph">Graph</button>
+            <button class="tab" data-tab="registry" type="button" data-i18n="registry">Registry</button>
             <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
             <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
           </div>
@@ -88,6 +89,122 @@
             <div id="workflowGraph" class="workflow-graph" aria-label="Workflow graph">
               <svg id="graphEdges" class="graph-edges" aria-hidden="true"></svg>
               <div id="graphNodeLayer" class="graph-node-layer"></div>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="registryPanel">
+            <div class="section-head compact">
+              <div>
+                <h2 data-i18n="registryCenter">Registry Center</h2>
+                <p class="section-note" data-i18n="registryCenterNote">Register sites, pages, page actions, and reusable operations before composing workflows.</p>
+              </div>
+              <div class="button-row">
+                <button class="secondary" id="newRegistryItemButton" type="button" data-i18n="newResource">New Resource</button>
+                <button class="secondary" id="saveRegistryItemButton" type="button" data-i18n="saveResource">Save Resource</button>
+                <button class="secondary danger-action" id="deleteRegistryItemButton" type="button" data-i18n="delete">Delete</button>
+                <button class="primary" id="buildWorkflowFromOperationButton" type="button" data-i18n="buildWorkflow">Build Workflow</button>
+              </div>
+            </div>
+
+            <div id="registryMetrics" class="registry-metrics"></div>
+            <div class="registry-workbench">
+              <div class="registry-navigation">
+                <div id="registrySectionTabs" class="registry-section-tabs"></div>
+                <div id="registryItemList" class="registry-item-list"></div>
+              </div>
+
+              <div class="registry-detail">
+                <div class="registry-detail-head">
+                  <div>
+                    <span id="registryKindLabel" class="registry-kind">Site</span>
+                    <h2 id="registryDetailTitle">Registry resource</h2>
+                  </div>
+                  <span id="registryDetailStatus" class="pill muted">draft</span>
+                </div>
+
+                <div class="registry-form-grid">
+                  <div>
+                    <label for="registryItemId" data-i18n="id">ID</label>
+                    <input id="registryItemId" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemName" data-i18n="name">Name</label>
+                    <input id="registryItemName" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemStatus" data-i18n="status">Status</label>
+                    <select id="registryItemStatus">
+                      <option value="draft">draft</option>
+                      <option value="ready">ready</option>
+                      <option value="deprecated">deprecated</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="registryItemSite" data-i18n="site">Site</label>
+                    <select id="registryItemSite"></select>
+                  </div>
+                  <div>
+                    <label for="registryItemPage" data-i18n="page">Page</label>
+                    <select id="registryItemPage"></select>
+                  </div>
+                  <div>
+                    <label for="registryItemActionType" data-i18n="actionType">Action Type</label>
+                    <select id="registryItemActionType">
+                      <option value="goto">goto</option>
+                      <option value="waitFor">waitFor</option>
+                      <option value="click">click</option>
+                      <option value="fill">fill</option>
+                      <option value="press">press</option>
+                      <option value="extract">extract</option>
+                      <option value="screenshot">screenshot</option>
+                      <option value="apiCall">apiCall</option>
+                      <option value="approval">approval</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="registryItemBaseUrl" data-i18n="baseUrl">Base URL</label>
+                    <input id="registryItemBaseUrl" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemUrlPattern" data-i18n="urlPattern">URL Pattern</label>
+                    <input id="registryItemUrlPattern" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemSelector" data-i18n="selector">Selector</label>
+                    <input id="registryItemSelector" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemValueTemplate" data-i18n="valueTemplate">Value Template</label>
+                    <input id="registryItemValueTemplate" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemOutputName" data-i18n="outputName">Output Name</label>
+                    <input id="registryItemOutputName" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="registryItemTags" data-i18n="tags">Tags</label>
+                    <input id="registryItemTags" autocomplete="off" />
+                  </div>
+                </div>
+
+                <label for="registryItemDescription" data-i18n="description">Description</label>
+                <input id="registryItemDescription" autocomplete="off" />
+
+                <div class="registry-json-grid">
+                  <div>
+                    <label for="registryItemActionIds" data-i18n="actionIds">Action IDs</label>
+                    <textarea id="registryItemActionIds" spellcheck="false"></textarea>
+                  </div>
+                  <div>
+                    <label for="registryItemDefinitionJson" data-i18n="definitionJson">Definition JSON</label>
+                    <textarea id="registryItemDefinitionJson" spellcheck="false"></textarea>
+                  </div>
+                  <div>
+                    <label for="registryItemSchemaJson" data-i18n="schemaJson">Schema JSON</label>
+                    <textarea id="registryItemSchemaJson" spellcheck="false"></textarea>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
