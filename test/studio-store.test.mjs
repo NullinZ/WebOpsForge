@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { StudioStore, createRunQueue } from "../src/index.mjs";
+import { StudioStore, createRunQueue, probeProfileSession } from "../src/index.mjs";
 
 test("studio store seeds workflow and queue completes a dry-run", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-studio-"));
@@ -45,10 +45,24 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
       id: "operator-01",
       name: "Operator 01",
       mode: "dry-run",
+      platform: "1688",
+      accountLabel: "operator@example",
+      loginState: "authenticated",
       status: "ready",
+      sessionCheck: {
+        platform: "1688",
+        url: "https://work.1688.example",
+        accountSelector: ".account-name"
+      },
       tags: ["test"]
     });
     assert.equal(profile.name, "Operator 01");
+    assert.equal(profile.accountLabel, "operator@example");
+    assert.equal(profile.sessionCheck.accountSelector, ".account-name");
+
+    const session = await probeProfileSession({ profile });
+    assert.equal(session.loginState, "authenticated");
+    assert.equal(session.accountLabel, "operator@example");
 
     const workflow = (await store.listWorkflows())[0];
     const run = await store.createRun({

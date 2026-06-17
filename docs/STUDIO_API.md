@@ -10,7 +10,7 @@ Returns service health.
 
 ### `GET /api/runtime`
 
-Returns queue state, data directory, and supported modes.
+Returns queue state, data directory, supported run modes, and supported operation branch modes.
 
 ### `GET /api/audit`
 
@@ -52,7 +52,7 @@ Deletes one workflow record.
 
 ## Profiles
 
-Profiles represent local dry-run fixtures or browser/account execution targets.
+Profiles represent local dry-run fixtures or browser/account execution targets. A browser profile should map to one persistent logged-in account directory.
 
 ### `GET /api/profiles`
 
@@ -70,6 +70,41 @@ Fetches one profile.
 
 Updates one profile.
 
+### `POST /api/profiles/:id/check-session`
+
+Checks a profile's login state and writes the result back to the profile.
+
+Request:
+
+```json
+{
+  "platform": "1688",
+  "url": "https://work.1688.example",
+  "accountSelector": ".account-name",
+  "loggedOutSelector": ".login-button",
+  "timeoutMs": 10000
+}
+```
+
+Response:
+
+```json
+{
+  "profile": {
+    "id": "operator-01",
+    "accountLabel": "operator@example",
+    "loginState": "authenticated",
+    "lastCheckedAt": "2026-06-17T00:00:00.000Z"
+  },
+  "result": {
+    "loginState": "authenticated",
+    "accountLabel": "operator@example"
+  }
+}
+```
+
+For Playwright profiles, `profileDir` must point to the persistent browser profile directory that already contains the logged-in session.
+
 ### `DELETE /api/profiles/:id`
 
 Deletes one profile.
@@ -85,8 +120,13 @@ Request:
 ```json
 {
   "mode": "dry-run",
+  "profileId": "dry-run-demo",
   "input": {},
-  "context": {},
+  "context": {
+    "operationModes": {
+      "searchSuppliers": "browser"
+    }
+  },
   "driverConfig": {}
 }
 ```

@@ -33,6 +33,8 @@ export class StudioStore {
     if (profiles.length === 0) {
       await this.#writeJson(this.profilesFile, createDefaultProfiles(this.clock));
     }
+
+    await this.#migrateSeedData();
   }
 
   async listWorkflows() {
@@ -99,24 +101,36 @@ export class StudioStore {
     const now = this.clock().toISOString();
     const id = record.id || createId("profile");
     const existing = profiles.find((profile) => profile.id === id);
+    const status = record.status ?? existing?.status ?? "ready";
     const normalized = {
       id,
       name: record.name || existing?.name || id,
       mode: record.mode || existing?.mode || "dry-run",
+      platform: record.platform ?? existing?.platform ?? "",
+      accountLabel: record.accountLabel ?? existing?.accountLabel ?? "",
+      loginState: record.loginState ?? existing?.loginState ?? "unchecked",
       profileDir: record.profileDir ?? existing?.profileDir ?? "",
       browserType: record.browserType ?? existing?.browserType ?? "chromium",
       headless: Boolean(record.headless ?? existing?.headless ?? false),
-      status: record.status ?? existing?.status ?? "ready",
-      leasedRunId: record.leasedRunId ?? existing?.leasedRunId ?? null,
+      status,
+      leasedRunId: status === "busy" ? record.leasedRunId ?? existing?.leasedRunId ?? null : record.leasedRunId ?? null,
       rateLimit: {
         minDelayMs: Number(record.rateLimit?.minDelayMs ?? existing?.rateLimit?.minDelayMs ?? 0),
         maxPerMinute: record.rateLimit?.maxPerMinute ?? existing?.rateLimit?.maxPerMinute ?? null
+      },
+      sessionCheck: {
+        platform: record.sessionCheck?.platform ?? record.platform ?? existing?.sessionCheck?.platform ?? existing?.platform ?? "",
+        url: record.sessionCheck?.url ?? existing?.sessionCheck?.url ?? "",
+        accountSelector: record.sessionCheck?.accountSelector ?? existing?.sessionCheck?.accountSelector ?? "",
+        loggedOutSelector: record.sessionCheck?.loggedOutSelector ?? existing?.sessionCheck?.loggedOutSelector ?? "",
+        timeoutMs: Number(record.sessionCheck?.timeoutMs ?? existing?.sessionCheck?.timeoutMs ?? 10_000)
       },
       tags: Array.isArray(record.tags) ? record.tags : existing?.tags ?? [],
       notes: record.notes ?? existing?.notes ?? "",
       createdAt: existing?.createdAt ?? record.createdAt ?? now,
       updatedAt: now,
-      lastRunAt: record.lastRunAt ?? existing?.lastRunAt ?? null
+      lastRunAt: record.lastRunAt ?? existing?.lastRunAt ?? null,
+      lastCheckedAt: record.lastCheckedAt ?? existing?.lastCheckedAt ?? null
     };
     const next = profiles.filter((profile) => profile.id !== id);
     next.push(normalized);
@@ -390,6 +404,52 @@ export class StudioStore {
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
   }
+
+  async #migrateSeedData() {
+    const defaults = createDefaultProfiles(this.clock);
+    const profiles = await this.#readJson(this.profilesFile, []);
+    let profilesChanged = false;
+    const migratedProfiles = profiles.map((profile) => {
+      const fallback = defaults.find((item) => item.id === profile.id);
+      if (!fallback) return profile;
+      const migrated = {
+        ...fallback,
+        ...profile,
+        platform: profile.platform ?? fallback.platform,
+        accountLabel: profile.accountLabel ?? fallback.accountLabel,
+        loginState: profile.loginState ?? fallback.loginState,
+        sessionCheck: {
+          ...fallback.sessionCheck,
+          ...(profile.sessionCheck ?? {})
+        },
+        lastCheckedAt: profile.lastCheckedAt ?? fallback.lastCheckedAt,
+        leasedRunId: profile.status === "busy" ? profile.leasedRunId ?? null : null
+      };
+      profilesChanged ||= JSON.stringify(migrated) !== JSON.stringify(profile);
+      return migrated;
+    });
+    if (profilesChanged) await this.#writeJson(this.profilesFile, migratedProfiles);
+
+    const workflows = await this.#readJson(this.workflowsFile, []);
+    const sample = createSampleWorkflowRecord(this.clock);
+    const migratedWorkflows = workflows.map((workflow) => {
+      if (workflow.id !== sample.id) return workflow;
+      const hasOperation = workflow.workflow?.steps?.some((step) => step.action === "operation");
+      const hasOutputAssert = workflow.workflow?.steps?.some((step) => step.action === "assertOutput");
+      if (hasOperation && hasOutputAssert) return workflow;
+      return {
+        ...workflow,
+        name: sample.name,
+        description: sample.description,
+        workflow: normalizeWorkflow(sample.workflow),
+        defaultRun: sample.defaultRun,
+        updatedAt: sample.updatedAt
+      };
+    });
+    if (JSON.stringify(migratedWorkflows) !== JSON.stringify(workflows)) {
+      await this.#writeJson(this.workflowsFile, migratedWorkflows);
+    }
+  }
 }
 
 function createId(prefix) {
@@ -423,33 +483,55 @@ function createDefaultProfiles(clock = () => new Date()) {
       id: "dry-run-demo",
       name: "Dry-run Demo",
       mode: "dry-run",
+      platform: "example.local",
+      accountLabel: "demo-operator",
+      loginState: "authenticated",
       profileDir: "",
       browserType: "chromium",
       headless: true,
       status: "ready",
       leasedRunId: null,
       rateLimit: { minDelayMs: 0, maxPerMinute: null },
+      sessionCheck: {
+        platform: "example.local",
+        url: "https://example.local/search",
+        accountSelector: ".account-name",
+        loggedOutSelector: "",
+        timeoutMs: 3000
+      },
       tags: ["demo", "safe"],
       notes: "Fixture-backed dry-run profile for local workflow validation.",
       createdAt: now,
       updatedAt: now,
-      lastRunAt: null
+      lastRunAt: null,
+      lastCheckedAt: now
     },
     {
       id: "local-chromium",
       name: "Local Chromium",
       mode: "playwright",
+      platform: "",
+      accountLabel: "",
+      loginState: "unchecked",
       profileDir: "",
       browserType: "chromium",
       headless: false,
       status: "ready",
       leasedRunId: null,
       rateLimit: { minDelayMs: 1000, maxPerMinute: 20 },
+      sessionCheck: {
+        platform: "",
+        url: "",
+        accountSelector: "",
+        loggedOutSelector: "",
+        timeoutMs: 10_000
+      },
       tags: ["local", "browser"],
       notes: "Use for controlled local Playwright workflows. Add a profileDir before using logged-in sites.",
       createdAt: now,
       updatedAt: now,
-      lastRunAt: null
+      lastRunAt: null,
+      lastCheckedAt: null
     }
   ];
 }

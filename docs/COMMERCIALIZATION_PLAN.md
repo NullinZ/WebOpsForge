@@ -10,6 +10,7 @@ For teams that run repeated logged-in web operations, WebOps Forge provides:
 
 - deterministic workflow execution
 - local and browser execution modes
+- operation-level browser/API switching
 - run history and evidence
 - approval gates
 - rate limits
@@ -32,6 +33,9 @@ Implemented:
 - workflow library persistence
 - asynchronous run queue
 - browser/account profile registry
+- profile session check metadata and API
+- operation action with browser/API branches
+- API call action with dry-run fixtures and Playwright browser-session support
 - profile lease and release around runs
 - run cancellation and retry
 - persisted run history
@@ -75,6 +79,7 @@ Status: partially implemented.
 Needed:
 
 - persistent profile registry: implemented
+- profile session check: implemented
 - worker health endpoint
 - profile lock and lease model: implemented for local queue
 - per-profile rate limits
@@ -96,6 +101,7 @@ Needed:
 - workflow version diff
 - run comparison
 - reusable driver fixtures
+- API response fixtures for dry-runs: implemented
 - import/export workflow bundle: implemented
 
 ### Milestone 4: Operations Governance
@@ -119,6 +125,7 @@ Status: planned.
 Needed:
 
 - adapter SDK conventions
+- operation mode policy conventions: partially implemented
 - private adapter template
 - platform-specific workflow packs outside the open repo
 - adapter test harness

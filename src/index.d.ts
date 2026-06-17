@@ -24,9 +24,12 @@ export type WorkflowAction =
   | "fill"
   | "press"
   | "extract"
+  | "apiCall"
+  | "operation"
   | "screenshot"
   | "approval"
   | "assertText"
+  | "assertOutput"
   | "checkpoint";
 
 export interface WorkflowStep {
@@ -76,6 +79,7 @@ export interface BrowserDriver {
   fill?(args: { selector: string; value: unknown; timeoutMs?: number | null; redact?: boolean }): Promise<unknown>;
   press?(args: { selector?: string | null; key: string; timeoutMs?: number | null }): Promise<unknown>;
   extract?(args: { selector: string; mode?: string; attribute?: string | null; timeoutMs?: number | null }): Promise<{ value: unknown }>;
+  apiCall?(args: ApiRequest): Promise<ApiResult>;
   screenshot?(args: { fullPage?: boolean; name?: string }): Promise<{ contentType?: string; bytes?: Uint8Array; text?: string } | null | undefined>;
   currentUrl?(): Promise<string>;
   close?(): Promise<void>;
@@ -95,6 +99,28 @@ export interface RateLimiter {
   wait(args?: { step?: NormalizedWorkflowStep; state?: RunnerState }): Promise<void>;
 }
 
+export interface ApiRequest {
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  timeoutMs?: number | null;
+}
+
+export interface ApiResult {
+  status: number;
+  ok: boolean;
+  headers: Record<string, string>;
+  body: string;
+  json: unknown;
+  value?: unknown;
+}
+
+export interface ApiClient {
+  kind?: string;
+  call(request: ApiRequest): Promise<ApiResult>;
+}
+
 export interface RunnerPolicy {
   beforeStep?(args: { step: NormalizedWorkflowStep; state: RunnerState }): Promise<void> | void;
   afterStep?(args: { step: NormalizedWorkflowStep; state: RunnerState; result: unknown }): Promise<void> | void;
@@ -103,7 +129,8 @@ export interface RunnerPolicy {
 
 export class WebOpsRunner {
   constructor(options: {
-    driver: BrowserDriver;
+    driver?: BrowserDriver | null;
+    apiClient?: ApiClient;
     evidenceStore?: EvidenceStore;
     rateLimiter?: RateLimiter | null;
     policy?: RunnerPolicy | null;
@@ -126,9 +153,12 @@ export function createMemoryEvidenceStore(): MemoryEvidenceStore;
 export function createFileEvidenceStore(options: { dir: string }): EvidenceStore;
 
 export function createRateLimiter(options?: { minDelayMs?: number; maxPerMinute?: number | null }): RateLimiter;
+export function createFetchApiClient(options?: { fetchImpl?: typeof fetch }): ApiClient;
+export function executeApiCall(options: { step: NormalizedWorkflowStep; driver?: BrowserDriver; apiClient: ApiClient; timeoutMs?: number | null }): Promise<ApiResult>;
 
 export function createDryRunDriver(options?: {
   pages?: Record<string, { selectors?: Record<string, Record<string, unknown>> }>;
+  apiResponses?: Record<string, unknown>;
   initialUrl?: string;
 }): BrowserDriver & { kind: "dry-run"; log: Record<string, unknown>[] };
 
@@ -183,6 +213,9 @@ export interface StudioProfileRecord {
   id: string;
   name: string;
   mode: "dry-run" | "playwright" | string;
+  platform: string;
+  accountLabel: string;
+  loginState: "unchecked" | "authenticated" | "logged-out" | "unknown" | string;
   profileDir: string;
   browserType: string;
   headless: boolean;
@@ -192,11 +225,19 @@ export interface StudioProfileRecord {
     minDelayMs: number;
     maxPerMinute: number | null;
   };
+  sessionCheck: {
+    platform?: string;
+    url?: string;
+    accountSelector?: string;
+    loggedOutSelector?: string;
+    timeoutMs?: number;
+  };
   tags: string[];
   notes: string;
   createdAt: string;
   updatedAt: string;
   lastRunAt: string | null;
+  lastCheckedAt: string | null;
 }
 
 export class StudioStore {
@@ -236,6 +277,19 @@ export function createRunQueue(options: { store: StudioStore; concurrency?: numb
   cancel(runId: string, reason?: string): Promise<{ run: StudioRunRecord; changed: boolean }>;
   status(): { pending: number; active: number; concurrency: number; activeRunIds: string[]; pendingRunIds: string[] };
 };
+
+export function probeProfileSession(options: {
+  profile: StudioProfileRecord;
+  overrides?: Record<string, unknown>;
+  clock?: () => Date;
+}): Promise<{
+  platform: string;
+  accountLabel: string;
+  loginState: string;
+  lastCheckedAt: string;
+  sessionCheck: StudioProfileRecord["sessionCheck"];
+  details: Record<string, unknown>;
+}>;
 
 export class WebOpsForgeError extends Error {
   code: string;

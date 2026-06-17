@@ -75,6 +75,8 @@ It includes:
 - workflow library and JSON editor
 - dry-run and Playwright execution modes
 - browser/account profile registry
+- profile session check metadata
+- operation-level UI/API execution switching
 - run input, context, and driver configuration
 - queued run execution
 - run cancellation and retry
@@ -149,6 +151,25 @@ const runner = new WebOpsRunner({ driver });
 
 Use persistent profiles only on controlled machines. Do not store credentials or customer data inside reusable open-source workflows.
 
+## Profiles And Logged-In Accounts
+
+A Studio profile represents one execution identity. In browser mode, use one persistent `profileDir` per platform account:
+
+```text
+/secure/webops-profiles/1688-operator-01
+/secure/webops-profiles/1688-operator-02
+```
+
+Log in once manually with that profile, then run workflows against it. The Profile editor stores:
+
+- `name`: operator-facing label.
+- `platform`: platform or tenant label.
+- `accountLabel`: account name extracted from the page or entered manually.
+- `loginState`: `unchecked`, `authenticated`, `logged-out`, or `unknown`.
+- `sessionCheck`: URL and selector used by Studio's Check Session action.
+
+Studio can check a profile by opening the configured URL and reading the account selector. It does not store account passwords and must not be used to bypass CAPTCHA, 2FA, or platform verification.
+
 ## Workflow Actions
 
 Supported actions:
@@ -159,8 +180,11 @@ Supported actions:
 - `fill`: fill a field.
 - `press`: press a key.
 - `extract`: extract text, value, HTML, or an attribute.
+- `apiCall`: call an HTTP endpoint and optionally write the response value to outputs.
+- `operation`: wrap one business operation with switchable browser and API branches.
 - `approval`: require a policy or context approval before continuing.
 - `assertText`: fail if expected text is missing.
+- `assertOutput`: fail if an output value does not include expected text.
 - `screenshot`: capture evidence.
 - `checkpoint`: add a named audit marker.
 
@@ -171,6 +195,42 @@ String fields support templates:
 {{context.accountName}}
 {{outputs.resultTitle}}
 ```
+
+## UI/API Operation Switching
+
+Use `operation` when one business action can be executed either through UI automation or a platform API.
+
+```js
+{
+  id: "searchSuppliers",
+  action: "operation",
+  mode: "{{context.operationModes.searchSuppliers}}",
+  browserSteps: [
+    { id: "openSearch", action: "goto", url: "https://example.local/search" },
+    { id: "fillQuery", action: "fill", selector: "#q", value: "{{input.query}}" },
+    { id: "extractTitle", action: "extract", selector: ".result-title", name: "title" }
+  ],
+  api: {
+    method: "GET",
+    url: "https://api.example.local/suppliers/search",
+    query: { q: "{{input.query}}" },
+    extract: "json.title",
+    name: "title"
+  }
+}
+```
+
+Then switch the branch at run time:
+
+```json
+{
+  "operationModes": {
+    "searchSuppliers": "api"
+  }
+}
+```
+
+`apiCall` supports `method`, `url`, `query`, `headers`, `body` or `json`, `extract`, and `name`. In dry-run mode, configure `driverConfig.apiResponses`. In Playwright mode, set `session: "browser"` on the API branch when the request should reuse the browser context's cookies.
 
 ## Evidence
 
@@ -201,6 +261,7 @@ The Studio exposes a local REST API:
 - `POST /api/profiles`
 - `GET /api/profiles/:id`
 - `PUT /api/profiles/:id`
+- `POST /api/profiles/:id/check-session`
 - `DELETE /api/profiles/:id`
 - `GET /api/runs`
 - `GET /api/runs/:id`

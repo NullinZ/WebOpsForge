@@ -315,6 +315,10 @@ h2 {
   gap: 12px;
 }
 
+.operation-modes textarea {
+  min-height: 88px;
+}
+
 .triple-editors textarea {
   min-height: 360px;
 }

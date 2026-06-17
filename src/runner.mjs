@@ -2,12 +2,14 @@ import { BrowserActionError, BrowserBlockedError, RunCancelledError } from "./er
 import { createMemoryEvidenceStore } from "./evidence.mjs";
 import { createRateLimiter } from "./rate-limit.mjs";
 import { normalizeWorkflow } from "./workflow.mjs";
-import { assertTemplateReady, resolveTemplates } from "./template.mjs";
+import { assertTemplateReady, getPath, resolveTemplates } from "./template.mjs";
+import { createFetchApiClient, executeApiCall } from "./api-client.mjs";
 
 export class WebOpsRunner {
-  constructor({ driver, evidenceStore = createMemoryEvidenceStore(), rateLimiter = null, policy = null, clock = () => new Date() } = {}) {
-    if (!driver) throw new Error("WebOpsRunner requires a driver");
-    this.driver = driver;
+  constructor({ driver = null, apiClient = createFetchApiClient(), evidenceStore = createMemoryEvidenceStore(), rateLimiter = null, policy = null, clock = () => new Date() } = {}) {
+    if (!driver && !apiClient) throw new Error("WebOpsRunner requires a driver or apiClient");
+    this.driver = driver ?? {};
+    this.apiClient = apiClient;
     this.evidenceStore = evidenceStore;
     this.rateLimiter = rateLimiter ?? createRateLimiter();
     this.policy = policy;
@@ -51,8 +53,9 @@ export class WebOpsRunner {
     assertNotCancelled(state);
     const startedAt = this.clock().toISOString();
     const scope = { input: state.input, context: state.context, outputs: state.outputs };
-    assertTemplateReady(step, scope);
-    const resolved = resolveTemplates(step, scope);
+    const templatedStep = selectActiveOperationBranch(step, scope, state);
+    assertTemplateReady(templatedStep, scope);
+    const resolved = resolveTemplates(templatedStep, scope);
     const timeoutMs = resolved.timeoutMs ?? workflow.defaults.timeoutMs;
 
     await this.policy?.beforeStep?.({ step: resolved, state });
@@ -66,11 +69,9 @@ export class WebOpsRunner {
     });
 
     try {
-      const result = await this.#dispatch(resolved, { timeoutMs, state });
+      const result = await this.#dispatch(resolved, { timeoutMs, state, workflow });
       assertNotCancelled(state);
-      if (resolved.action === "extract") {
-        state.outputs[resolved.name] = result.value;
-      }
+      applyStepOutput(resolved, result, state);
       await this.policy?.afterStep?.({ step: resolved, state, result });
       await this.evidenceStore.append({
         type: "step.completed",
@@ -107,7 +108,7 @@ export class WebOpsRunner {
     }
   }
 
-  async #dispatch(step, { timeoutMs, state }) {
+  async #dispatch(step, { timeoutMs, state, workflow }) {
     switch (step.action) {
       case "goto":
         return this.driver.goto({ url: step.url, timeoutMs, state });
@@ -126,12 +127,18 @@ export class WebOpsRunner {
           attribute: step.attribute ?? null,
           timeoutMs
         });
+      case "apiCall":
+        return executeApiCall({ step, driver: this.driver, apiClient: this.apiClient, timeoutMs });
+      case "operation":
+        return this.#runOperation(step, { workflow, state });
       case "screenshot":
         return this.#captureNamedScreenshot(step);
       case "approval":
         return this.#requestApproval(step, state);
       case "assertText":
         return this.#assertText(step, timeoutMs);
+      case "assertOutput":
+        return this.#assertOutput(step, state);
       case "checkpoint":
         return { label: step.label ?? step.id };
       default:
@@ -149,6 +156,19 @@ export class WebOpsRunner {
       });
     }
     return { ok: true, selector: step.selector, includes: step.includes };
+  }
+
+  async #assertOutput(step, state) {
+    const path = step.path ?? `outputs.${step.name}`;
+    const value = getPath({ input: state.input, context: state.context, outputs: state.outputs }, path);
+    if (!String(value ?? "").includes(step.includes)) {
+      throw new BrowserBlockedError(`Expected output not found for ${path}`, {
+        stepId: step.id,
+        reason: "assert_output_failed",
+        details: { path, includes: step.includes, actual: value }
+      });
+    }
+    return { ok: true, path, includes: step.includes };
   }
 
   async #requestApproval(step, state) {
@@ -183,6 +203,28 @@ export class WebOpsRunner {
     });
   }
 
+  async #runOperation(step, { workflow, state }) {
+    const mode = normalizeOperationMode(step.mode);
+    if (mode === "api") {
+      if (!step.api) {
+        throw new BrowserActionError(`Operation ${step.id} does not define an API branch`, { stepId: step.id });
+      }
+      const result = await this.#runStep({ workflow, step: step.api, state });
+      return { mode, result };
+    }
+
+    const steps = step.browserSteps ?? [];
+    if (steps.length === 0) {
+      throw new BrowserActionError(`Operation ${step.id} does not define browser steps`, { stepId: step.id });
+    }
+    const results = [];
+    for (const childStep of steps) {
+      assertNotCancelled(state);
+      results.push(await this.#runStep({ workflow, step: childStep, state }));
+    }
+    return { mode, steps: steps.map((item) => item.id), results };
+  }
+
   async #captureNamedScreenshot(step) {
     const image = await this.driver.screenshot?.({ fullPage: Boolean(step.fullPage), name: step.name });
     if (!image) return { captured: false };
@@ -204,6 +246,39 @@ export class WebOpsRunner {
       bytes: image.bytes,
       text: image.text
     });
+  }
+}
+
+function selectActiveOperationBranch(step, scope, state) {
+  if (step.action !== "operation") return step;
+  const modeSource = step.mode ?? state.context?.operationModes?.[step.id] ?? "browser";
+  const modeStep = { id: step.id, action: step.action, mode: modeSource };
+  assertTemplateReady(modeStep, scope);
+  const mode = normalizeOperationMode(resolveTemplates(modeSource, scope));
+  if (mode === "api") {
+    return { ...step, mode, browserSteps: [] };
+  }
+  return { ...step, mode, api: null };
+}
+
+function normalizeOperationMode(mode) {
+  const value = String(mode ?? "browser").toLowerCase();
+  if (value === "ui" || value === "browser" || value === "playwright") return "browser";
+  if (value === "api" || value === "http") return "api";
+  throw new BrowserActionError(`Unsupported operation mode: ${mode}`, {
+    reason: "unsupported_operation_mode",
+    details: { mode }
+  });
+}
+
+function applyStepOutput(step, result, state) {
+  if (step.action === "extract") {
+    state.outputs[step.name] = result.value;
+    return;
+  }
+  if ((step.action === "apiCall" || step.action === "operation") && (step.name || step.output || step.outputName)) {
+    const name = step.name ?? step.output ?? step.outputName;
+    state.outputs[name] = result.value ?? result.result?.value ?? result;
   }
 }
 

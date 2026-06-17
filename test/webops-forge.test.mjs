@@ -168,3 +168,106 @@ test("blocks approval gates until context approval is present", async () => {
   });
   assert.equal(result.status, "completed");
 });
+
+test("asserts workflow outputs without depending on page selectors", async () => {
+  const workflow = defineWorkflow({
+    name: "assert-output-test",
+    steps: [
+      { id: "open", action: "goto", url: "https://example.local/search" },
+      { id: "extract", action: "extract", selector: ".result-title", name: "title" },
+      { id: "assertOutput", action: "assertOutput", name: "title", includes: "storage" }
+    ]
+  });
+  const runner = new WebOpsRunner({
+    driver: createSearchDriver(),
+    evidenceStore: createMemoryEvidenceStore()
+  });
+
+  const result = await runner.run(workflow);
+
+  assert.equal(result.outputs.title, "Clear storage case supplier");
+});
+
+test("blocks when an output assertion does not match", async () => {
+  const workflow = defineWorkflow({
+    name: "assert-output-failure-test",
+    steps: [
+      { id: "open", action: "goto", url: "https://example.local/search" },
+      { id: "extract", action: "extract", selector: ".result-title", name: "title" },
+      { id: "assertOutput", action: "assertOutput", name: "title", includes: "missing" }
+    ]
+  });
+  const runner = new WebOpsRunner({
+    driver: createSearchDriver(),
+    evidenceStore: createMemoryEvidenceStore()
+  });
+
+  await assert.rejects(runner.run(workflow), BrowserBlockedError);
+});
+
+test("normalizing operation workflows is idempotent for nested step ids", async () => {
+  const workflow = defineWorkflow({
+    name: "operation-idempotent-test",
+    steps: [
+      {
+        id: "searchSuppliers",
+        action: "operation",
+        mode: "api",
+        browserSteps: [
+          { id: "open", action: "goto", url: "https://example.local/search" }
+        ],
+        api: {
+          method: "GET",
+          url: "https://api.example.local/search",
+          name: "title"
+        }
+      }
+    ]
+  });
+
+  const normalizedAgain = defineWorkflow(workflow);
+
+  assert.equal(normalizedAgain.steps[0].browserSteps[0].id, "searchSuppliers.open");
+  assert.equal(normalizedAgain.steps[0].api.id, "searchSuppliers.api");
+});
+
+test("switches an operation from browser steps to an API call", async () => {
+  const workflow = defineWorkflow({
+    name: "operation-switch-test",
+    steps: [
+      {
+        id: "searchSuppliers",
+        action: "operation",
+        mode: "{{context.operationModes.searchSuppliers}}",
+        browserSteps: [
+          { id: "open", action: "goto", url: "https://example.local/search" },
+          { id: "extract", action: "extract", selector: ".result-title", name: "title" }
+        ],
+        api: {
+          method: "GET",
+          url: "https://api.example.local/suppliers/search",
+          query: { q: "{{input.query}}" },
+          extract: "json.title",
+          name: "title"
+        }
+      },
+      { id: "assert", action: "checkpoint", label: "{{outputs.title}}" }
+    ]
+  });
+  const driver = createDryRunDriver({
+    apiResponses: {
+      "GET https://api.example.local/suppliers/search?q=storage": {
+        json: { title: "API storage supplier" }
+      }
+    }
+  });
+  const runner = new WebOpsRunner({ driver, evidenceStore: createMemoryEvidenceStore() });
+
+  const result = await runner.run(workflow, {
+    input: { query: "storage" },
+    context: { operationModes: { searchSuppliers: "api" } }
+  });
+
+  assert.equal(result.outputs.title, "API storage supplier");
+  assert.deepEqual(driver.log.map((item) => item.action), ["apiCall"]);
+});

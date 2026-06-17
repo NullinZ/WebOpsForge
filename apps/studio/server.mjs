@@ -4,6 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StudioStore, createRunQueue } from "../../src/index.mjs";
+import { probeProfileSession } from "../../src/studio/profile-session.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -50,6 +51,7 @@ async function handleApi(req, res, url) {
       queue: queue.status(),
       dataDir: store.dir,
       modes: ["dry-run", "playwright"],
+      operationModes: ["browser", "api"],
       profiles: (await store.listProfiles()).length
     });
     return;
@@ -164,6 +166,45 @@ async function handleProfiles(req, res, parts) {
 
   if (req.method === "GET" && id) {
     sendJson(res, 200, { profile: await requireProfile(id) });
+    return;
+  }
+
+  if (req.method === "POST" && id && parts[2] === "check-session") {
+    const current = await requireProfile(id);
+    if (current.status === "busy" && current.leasedRunId) {
+      const error = new Error(`Profile is busy: ${current.name}`);
+      error.statusCode = 409;
+      error.code = "PROFILE_BUSY";
+      throw error;
+    }
+    const result = await probeProfileSession({
+      profile: current,
+      overrides: await readJsonBody(req)
+    });
+    const nextStatus = current.status === "disabled"
+      ? "disabled"
+      : result.loginState === "authenticated"
+        ? "ready"
+        : result.loginState === "logged-out"
+          ? "blocked"
+          : current.status;
+    const profile = await store.saveProfile({
+      ...current,
+      platform: result.platform,
+      accountLabel: result.accountLabel,
+      loginState: result.loginState,
+      status: nextStatus,
+      lastCheckedAt: result.lastCheckedAt,
+      sessionCheck: result.sessionCheck
+    });
+    await store.appendAudit({
+      type: "profile.session_checked",
+      profileId: id,
+      profileName: profile.name,
+      loginState: result.loginState,
+      accountLabel: result.accountLabel
+    });
+    sendJson(res, 200, { profile, result });
     return;
   }
 

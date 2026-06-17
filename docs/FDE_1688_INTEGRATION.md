@@ -10,6 +10,7 @@ The private 1688 project owns:
 
 - 1688 selectors
 - account and profile assignments
+- operation mode policy, such as when to prefer API versus UI automation
 - supplier candidate normalization
 - sourcing-specific scoring
 - inquiry message templates
@@ -55,6 +56,58 @@ Acceptance:
 - capture search result screenshot
 - write structured evidence
 - stop on CAPTCHA, login verification, or unexpected modal
+
+## Profile Strategy
+
+Use one WebOps Forge profile per 1688 account. The private adapter should assign stable names such as:
+
+```text
+1688-operator-01
+1688-operator-02
+```
+
+Each Playwright profile should point at a separate persistent `profileDir`. The operator logs in manually once, including CAPTCHA or 2FA if required. WebOps Forge can then run a session check by opening a configured 1688 page and extracting the visible account label with `accountSelector`.
+
+Do not put 1688 usernames, passwords, OTPs, or recovery data in workflow JSON.
+
+## UI/API Operation Policy
+
+Model each platform operation as a WebOps Forge `operation`:
+
+- browser branch: selectors and screenshots for the UI path
+- API branch: HTTP request for a stable platform endpoint when one is available
+- run context: `context.operationModes.<operationId>` decides which branch executes
+
+Example:
+
+```json
+{
+  "context": {
+    "operationModes": {
+      "keywordSearch": "api",
+      "detailCapture": "browser"
+    }
+  }
+}
+```
+
+If an API endpoint relies on the logged-in browser session, set the API branch to use browser session cookies in the private workflow:
+
+```json
+{
+  "id": "keywordSearch",
+  "action": "operation",
+  "mode": "{{context.operationModes.keywordSearch}}",
+  "api": {
+    "method": "GET",
+    "url": "https://example.1688.test/search",
+    "session": "browser",
+    "extract": "json.data"
+  }
+}
+```
+
+Keep all platform endpoint details in the private adapter, not in this open-source package.
 
 ## Workflow Contract
 

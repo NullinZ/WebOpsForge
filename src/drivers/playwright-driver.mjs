@@ -1,4 +1,5 @@
 import { BrowserActionError } from "../errors.mjs";
+import { normalizeApiResult } from "../api-client.mjs";
 
 export async function createPlaywrightDriver({
   browserType = "chromium",
@@ -75,6 +76,22 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
     async screenshot({ fullPage = false }) {
       const bytes = await page.screenshot({ fullPage, type: "png" });
       return { contentType: "image/png", bytes };
+    },
+    async apiCall(request) {
+      const requestContext = context?.request ?? page.context().request;
+      const response = await requestContext.fetch(request.url, {
+        method: request.method,
+        headers: request.headers,
+        data: request.body ?? undefined,
+        timeout: request.timeoutMs ?? undefined
+      });
+      const body = await response.text();
+      return normalizeApiResult({
+        status: response.status(),
+        ok: response.ok(),
+        headers: response.headers(),
+        body
+      });
     },
     async currentUrl() {
       return page.url();

@@ -94,6 +94,10 @@
                 </select>
               </div>
             </div>
+            <div class="operation-modes">
+              <label for="operationModesJson">Operation Modes</label>
+              <textarea id="operationModesJson" spellcheck="false"></textarea>
+            </div>
             <div class="triple-editors">
               <div>
                 <label for="runInputJson">Input</label>
@@ -112,7 +116,10 @@
             <div class="profile-editor">
               <div class="section-head compact">
                 <h2>Profile Details</h2>
-                <button class="secondary" id="saveProfileButton" type="button">Save Profile</button>
+                <div class="button-row">
+                  <button class="secondary" id="checkProfileButton" type="button">Check Session</button>
+                  <button class="secondary" id="saveProfileButton" type="button">Save Profile</button>
+                </div>
               </div>
               <div class="profile-grid">
                 <div>
@@ -131,6 +138,23 @@
                   </select>
                 </div>
                 <div>
+                  <label for="profilePlatform">Platform</label>
+                  <input id="profilePlatform" />
+                </div>
+                <div>
+                  <label for="profileAccountLabel">Account Label</label>
+                  <input id="profileAccountLabel" />
+                </div>
+                <div>
+                  <label for="profileLoginState">Login State</label>
+                  <select id="profileLoginState">
+                    <option value="unchecked">unchecked</option>
+                    <option value="authenticated">authenticated</option>
+                    <option value="logged-out">logged-out</option>
+                    <option value="unknown">unknown</option>
+                  </select>
+                </div>
+                <div>
                   <label for="profileStatus">Status</label>
                   <select id="profileStatus">
                     <option value="ready">ready</option>
@@ -142,6 +166,14 @@
                 <div>
                   <label for="profileDir">Profile Dir</label>
                   <input id="profileDir" />
+                </div>
+                <div>
+                  <label for="profileCheckUrl">Session Check URL</label>
+                  <input id="profileCheckUrl" />
+                </div>
+                <div>
+                  <label for="profileAccountSelector">Account Selector</label>
+                  <input id="profileAccountSelector" />
                 </div>
                 <div>
                   <label for="profileRate">Max Per Minute</label>

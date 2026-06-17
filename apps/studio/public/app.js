@@ -23,14 +23,20 @@ const elements = {
   runMode: document.querySelector("#runMode"),
   profileSelect: document.querySelector("#profileSelect"),
   approvalToggle: document.querySelector("#approvalToggle"),
+  operationModesJson: document.querySelector("#operationModesJson"),
   runInputJson: document.querySelector("#runInputJson"),
   runContextJson: document.querySelector("#runContextJson"),
   driverConfigJson: document.querySelector("#driverConfigJson"),
   profileId: document.querySelector("#profileId"),
   profileName: document.querySelector("#profileName"),
   profileMode: document.querySelector("#profileMode"),
+  profilePlatform: document.querySelector("#profilePlatform"),
+  profileAccountLabel: document.querySelector("#profileAccountLabel"),
+  profileLoginState: document.querySelector("#profileLoginState"),
   profileStatus: document.querySelector("#profileStatus"),
   profileDir: document.querySelector("#profileDir"),
+  profileCheckUrl: document.querySelector("#profileCheckUrl"),
+  profileAccountSelector: document.querySelector("#profileAccountSelector"),
   profileRate: document.querySelector("#profileRate"),
   selectedRunStatus: document.querySelector("#selectedRunStatus"),
   runSummary: document.querySelector("#runSummary"),
@@ -51,6 +57,7 @@ document.querySelector("#validateWorkflowButton").addEventListener("click", () =
 document.querySelector("#newWorkflowButton").addEventListener("click", () => createBlankWorkflow());
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
+document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
 document.querySelector("#cancelRunButton").addEventListener("click", () => cancelSelectedRun());
 document.querySelector("#retryRunButton").addEventListener("click", () => retrySelectedRun());
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -128,15 +135,16 @@ function renderProfiles() {
   for (const profile of state.profiles) {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = `${profile.name} (${profile.mode})`;
+    option.textContent = `${profile.name}${profile.accountLabel ? ` / ${profile.accountLabel}` : ""} (${profile.mode})`;
     elements.profileSelect.append(option);
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = `profile-row ${profile.id === state.selectedProfileId ? "active" : ""}`;
+    const identity = profile.accountLabel || profile.platform || profile.mode;
     button.innerHTML = `
       <span class="row-title">${escapeHtml(profile.name)}</span>
-      <span class="row-meta">${escapeHtml(profile.status)} · ${escapeHtml(profile.mode)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
+      <span class="row-meta">${escapeHtml(profile.status)} · ${escapeHtml(profile.loginState ?? "unchecked")} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
     `;
     button.addEventListener("click", () => selectProfile(profile.id));
     elements.profileList.append(button);
@@ -175,6 +183,7 @@ function selectWorkflow(id) {
   elements.runMode.value = workflow.defaultRun?.mode ?? "dry-run";
   elements.profileSelect.value = workflow.defaultRun?.profileId ?? "";
   elements.approvalToggle.value = "keep";
+  elements.operationModesJson.value = formatJson(workflow.defaultRun?.context?.operationModes ?? detectOperationModes(workflow.workflow));
   elements.runInputJson.value = formatJson(workflow.defaultRun?.input ?? {});
   elements.runContextJson.value = formatJson(workflow.defaultRun?.context ?? {});
   elements.driverConfigJson.value = formatJson(workflow.defaultRun?.driverConfig ?? {});
@@ -188,8 +197,13 @@ function selectProfile(id) {
   elements.profileId.value = profile.id;
   elements.profileName.value = profile.name;
   elements.profileMode.value = profile.mode;
+  elements.profilePlatform.value = profile.platform ?? profile.sessionCheck?.platform ?? "";
+  elements.profileAccountLabel.value = profile.accountLabel ?? "";
+  elements.profileLoginState.value = profile.loginState ?? "unchecked";
   elements.profileStatus.value = profile.status;
   elements.profileDir.value = profile.profileDir ?? "";
+  elements.profileCheckUrl.value = profile.sessionCheck?.url ?? "";
+  elements.profileAccountSelector.value = profile.sessionCheck?.accountSelector ?? "";
   elements.profileRate.value = profile.rateLimit?.maxPerMinute ?? "";
   renderProfiles();
 }
@@ -264,6 +278,8 @@ function renderAudit() {
 async function saveSelectedWorkflow() {
   try {
     const id = elements.workflowId.value.trim();
+    const context = parseJson(elements.runContextJson.value, "Context");
+    applyOperationModes(context);
     const body = {
       id,
       name: elements.workflowName.value.trim(),
@@ -273,7 +289,7 @@ async function saveSelectedWorkflow() {
         mode: elements.runMode.value,
         profileId: elements.profileSelect.value || null,
         input: parseJson(elements.runInputJson.value, "Input"),
-        context: parseJson(elements.runContextJson.value, "Context"),
+        context,
         driverConfig: parseJson(elements.driverConfigJson.value, "Driver")
       }
     };
@@ -309,8 +325,12 @@ async function saveSelectedProfile() {
       id,
       name: elements.profileName.value.trim(),
       mode: elements.profileMode.value,
+      platform: elements.profilePlatform.value.trim(),
+      accountLabel: elements.profileAccountLabel.value.trim(),
+      loginState: elements.profileLoginState.value,
       status: elements.profileStatus.value,
       profileDir: elements.profileDir.value.trim(),
+      sessionCheck: profileSessionCheckFromForm(),
       rateLimit: {
         maxPerMinute: elements.profileRate.value ? Number(elements.profileRate.value) : null
       }
@@ -329,10 +349,32 @@ async function saveSelectedProfile() {
   }
 }
 
+async function checkSelectedProfile() {
+  try {
+    const id = elements.profileId.value.trim();
+    if (!id) throw new Error("Profile ID is required");
+    const data = await api(`/api/profiles/${encodeURIComponent(id)}/check-session`, {
+      method: "POST",
+      body: {
+        platform: elements.profilePlatform.value.trim(),
+        accountLabel: elements.profileAccountLabel.value.trim(),
+        ...profileSessionCheckFromForm()
+      }
+    });
+    await Promise.all([loadProfiles(), loadAudit()]);
+    selectProfile(data.profile.id);
+    render();
+    showToast(`Session ${data.result.loginState}${data.result.accountLabel ? `: ${data.result.accountLabel}` : ""}`);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 async function runSelectedWorkflow() {
   if (!state.selectedWorkflowId) return;
   try {
     const context = parseJson(elements.runContextJson.value, "Context");
+    applyOperationModes(context);
     applyApprovalToggle(context);
     const data = await api(`/api/workflows/${encodeURIComponent(state.selectedWorkflowId)}/runs`, {
       method: "POST",
@@ -448,8 +490,18 @@ function createBlankProfile() {
     id,
     name: "New Profile",
     mode: "dry-run",
+    platform: "",
+    accountLabel: "",
+    loginState: "unchecked",
     status: "ready",
     profileDir: "",
+    sessionCheck: {
+      platform: "",
+      url: "",
+      accountSelector: "",
+      loggedOutSelector: "",
+      timeoutMs: 10000
+    },
     rateLimit: { maxPerMinute: null }
   };
   state.profiles.unshift(profile);
@@ -501,6 +553,32 @@ function applyApprovalToggle(context) {
   if (elements.approvalToggle.value === "block") {
     context.approvals.reviewSearch = false;
   }
+}
+
+function applyOperationModes(context) {
+  const modes = parseJson(elements.operationModesJson.value, "Operation Modes");
+  context.operationModes = modes;
+  return context;
+}
+
+function detectOperationModes(workflow) {
+  const modes = {};
+  for (const step of workflow?.steps ?? []) {
+    if (step.action === "operation") {
+      modes[step.id] = step.mode && !String(step.mode).includes("{{") ? step.mode : "browser";
+    }
+  }
+  return modes;
+}
+
+function profileSessionCheckFromForm() {
+  return {
+    platform: elements.profilePlatform.value.trim(),
+    url: elements.profileCheckUrl.value.trim(),
+    accountSelector: elements.profileAccountSelector.value.trim(),
+    loggedOutSelector: "",
+    timeoutMs: 10000
+  };
 }
 
 function formatJson(value) {

@@ -7,9 +7,12 @@ const SUPPORTED_ACTIONS = new Set([
   "fill",
   "press",
   "extract",
+  "apiCall",
+  "operation",
   "screenshot",
   "approval",
   "assertText",
+  "assertOutput",
   "checkpoint"
 ]);
 
@@ -20,9 +23,12 @@ const REQUIRED_FIELDS = {
   fill: ["selector", "value"],
   press: ["key"],
   extract: ["selector", "name"],
+  apiCall: ["url"],
+  operation: [],
   screenshot: ["name"],
   approval: ["name"],
   assertText: ["selector", "includes"],
+  assertOutput: ["name", "includes"],
   checkpoint: []
 };
 
@@ -57,7 +63,7 @@ export function validateStep(step, index = 0) {
   return normalizeStep(step, index, new Set());
 }
 
-function normalizeStep(step, index, seen) {
+function normalizeStep(step, index, seen, { parentId = null } = {}) {
   if (!step || typeof step !== "object") {
     throw new ActionValidationError(`Step ${index + 1} must be an object`);
   }
@@ -65,7 +71,8 @@ function normalizeStep(step, index, seen) {
   if (!SUPPORTED_ACTIONS.has(action)) {
     throw new ActionValidationError(`Unsupported action: ${action}`, { stepId: step.id ?? null });
   }
-  const id = step.id ?? `${action}_${index + 1}`;
+  const baseId = String(step.id ?? `${action}_${index + 1}`);
+  const id = parentId && !baseId.startsWith(`${parentId}.`) ? `${parentId}.${baseId}` : baseId;
   if (seen.has(id)) {
     throw new ActionValidationError(`Duplicate step id: ${id}`, { stepId: id });
   }
@@ -77,12 +84,31 @@ function normalizeStep(step, index, seen) {
     }
   }
 
-  return {
+  const normalized = {
     ...step,
     id,
     action,
     timeoutMs: step.timeoutMs == null ? null : Number(step.timeoutMs),
     optional: Boolean(step.optional),
     evidence: step.evidence ?? "auto"
+  };
+
+  if (action !== "operation") return normalized;
+
+  const browserSteps = step.browserSteps ?? step.steps ?? [];
+  const api = step.api ?? null;
+  if ((!Array.isArray(browserSteps) || browserSteps.length === 0) && !api) {
+    throw new ActionValidationError(`Step ${id} must define browserSteps or api`, { stepId: id });
+  }
+
+  return {
+    ...normalized,
+    mode: step.mode ?? step.use ?? "browser",
+    browserSteps: Array.isArray(browserSteps)
+      ? browserSteps.map((child, childIndex) => normalizeStep(child, childIndex, seen, { parentId: id }))
+      : [],
+    api: api
+      ? normalizeStep({ ...api, action: "apiCall", id: api.id ?? "api" }, 0, seen, { parentId: id })
+      : null
   };
 }

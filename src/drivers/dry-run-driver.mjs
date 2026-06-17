@@ -1,6 +1,7 @@
 import { BrowserActionError } from "../errors.mjs";
+import { normalizeApiResult } from "../api-client.mjs";
 
-export function createDryRunDriver({ pages = {}, initialUrl = "about:blank" } = {}) {
+export function createDryRunDriver({ pages = {}, apiResponses = {}, initialUrl = "about:blank" } = {}) {
   let currentUrl = initialUrl;
   const log = [];
   const values = new Map();
@@ -45,6 +46,12 @@ export function createDryRunDriver({ pages = {}, initialUrl = "about:blank" } = 
       log.push({ action: "screenshot", name, fullPage });
       return { contentType: "text/plain", text };
     },
+    async apiCall(request) {
+      const response = findApiResponse(apiResponses, request);
+      const result = normalizeApiResult(response);
+      log.push({ action: "apiCall", method: request.method, url: request.url, status: result.status });
+      return result;
+    },
     async currentUrl() {
       return currentUrl;
     },
@@ -52,6 +59,27 @@ export function createDryRunDriver({ pages = {}, initialUrl = "about:blank" } = 
       log.push({ action: "close" });
     }
   };
+}
+
+function findApiResponse(apiResponses, request) {
+  const key = `${request.method} ${request.url}`;
+  const response = apiResponses[key] ?? apiResponses[request.url] ?? apiResponses["*"];
+  if (response == null) {
+    throw new BrowserActionError(`API response not found in dry-run driver: ${key}`, {
+      details: { method: request.method, url: request.url }
+    });
+  }
+  if (typeof response === "string") return { status: 200, ok: true, body: response };
+  if (response.json != null && response.body == null) {
+    return {
+      status: response.status ?? 200,
+      ok: response.ok ?? true,
+      headers: response.headers ?? { "content-type": "application/json" },
+      body: JSON.stringify(response.json),
+      json: response.json
+    };
+  }
+  return response;
 }
 
 function findSelector({ pages, currentUrl, selector }) {
