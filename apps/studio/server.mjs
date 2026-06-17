@@ -52,6 +52,7 @@ async function handleApi(req, res, url) {
       dataDir: store.dir,
       modes: ["dry-run", "playwright"],
       operationModes: ["browser", "api"],
+      registry: summarizeRegistry(await store.getRegistry()),
       profiles: (await store.listProfiles()).length
     });
     return;
@@ -83,12 +84,51 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (parts[0] === "registry") {
+    await handleRegistry(req, res, parts);
+    return;
+  }
+
   if (parts[0] === "runs") {
     await handleRuns(req, res, parts, url);
     return;
   }
 
   sendJson(res, 404, { error: { message: "API route not found" } });
+}
+
+async function handleRegistry(req, res, parts) {
+  const section = parts[1] ? decodeURIComponent(parts[1]) : null;
+  const id = parts[2] ? decodeURIComponent(parts[2]) : null;
+
+  if (req.method === "GET" && !section) {
+    sendJson(res, 200, { registry: await store.getRegistry() });
+    return;
+  }
+
+  if (req.method === "PUT" && !section) {
+    sendJson(res, 200, { registry: await store.saveRegistry(await readJsonBody(req)) });
+    return;
+  }
+
+  if (req.method === "POST" && section && !id) {
+    const result = await store.saveRegistryItem(section, await readJsonBody(req));
+    sendJson(res, 201, result);
+    return;
+  }
+
+  if (req.method === "PUT" && section && id) {
+    const result = await store.saveRegistryItem(section, { ...(await readJsonBody(req)), id });
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === "DELETE" && section && id) {
+    sendJson(res, 200, await store.deleteRegistryItem(section, id));
+    return;
+  }
+
+  sendJson(res, 405, { error: { message: "Registry method not allowed" } });
 }
 
 async function handleWorkflows(req, res, parts) {
