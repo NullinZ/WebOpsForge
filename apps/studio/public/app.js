@@ -476,7 +476,7 @@ async function saveSelectedWorkflow() {
     await loadWorkflows();
     state.selectedWorkflowId = data.workflow.id;
     selectWorkflow(data.workflow.id);
-    showToast("Workflow saved");
+    showToast(t("workflowSaved"));
   } catch (error) {
     showToast(error.message);
   }
@@ -489,7 +489,7 @@ async function validateSelectedWorkflow() {
       method: "POST",
       body: { workflow }
     });
-    showToast(`Workflow valid: ${result.stepCount} steps`);
+    showToast(t("workflowValid", { count: result.stepCount }));
   } catch (error) {
     showToast(error.message);
   }
@@ -520,7 +520,7 @@ async function saveSelectedProfile() {
     await Promise.all([loadProfiles(), loadAudit()]);
     selectProfile(data.profile.id);
     render();
-    showToast("Profile saved");
+    showToast(t("profileSaved"));
   } catch (error) {
     showToast(error.message);
   }
@@ -529,7 +529,7 @@ async function saveSelectedProfile() {
 async function checkSelectedProfile() {
   try {
     const id = elements.profileId.value.trim();
-    if (!id) throw new Error("Profile ID is required");
+    if (!id) throw new Error(t("profileIdRequired"));
     const data = await api(`/api/profiles/${encodeURIComponent(id)}/check-session`, {
       method: "POST",
       body: {
@@ -541,7 +541,10 @@ async function checkSelectedProfile() {
     await Promise.all([loadProfiles(), loadAudit()]);
     selectProfile(data.profile.id);
     render();
-    showToast(`Session ${data.result.loginState}${data.result.accountLabel ? `: ${data.result.accountLabel}` : ""}`);
+    showToast(t("sessionResult", {
+      state: statusLabel(data.result.loginState),
+      account: data.result.accountLabel ? `: ${data.result.accountLabel}` : ""
+    }));
   } catch (error) {
     showToast(error.message);
   }
@@ -567,7 +570,7 @@ async function runSelectedWorkflow() {
     await loadRuns();
     renderRuns();
     await selectRun(data.run.id);
-    showToast("Run queued");
+    showToast(t("runQueued"));
   } catch (error) {
     showToast(error.message);
   }
@@ -579,7 +582,7 @@ async function cancelSelectedRun() {
     await api(`/api/runs/${encodeURIComponent(state.selectedRunId)}/cancel`, { method: "POST", body: {} });
     await refreshAll();
     await selectRun(state.selectedRunId);
-    showToast("Cancellation requested");
+    showToast(statusLabel("cancel_requested"));
   } catch (error) {
     showToast(error.message);
   }
@@ -592,7 +595,7 @@ async function retrySelectedRun() {
     state.selectedRunId = data.run.id;
     await refreshAll();
     await selectRun(data.run.id);
-    showToast("Retry queued");
+    showToast(t("retryQueued"));
   } catch (error) {
     showToast(error.message);
   }
@@ -608,7 +611,7 @@ async function exportBundle() {
     link.download = `webops-forge-export-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    showToast("Export ready");
+    showToast(t("exportReady"));
   } catch (error) {
     showToast(error.message);
   }
@@ -620,7 +623,10 @@ async function importBundle(file) {
     const bundle = JSON.parse(await file.text());
     const result = await api("/api/import", { method: "POST", body: bundle });
     await refreshAll();
-    showToast(`Imported ${result.imported.workflows} workflows and ${result.imported.profiles} profiles`);
+    showToast(t("importedBundle", {
+      workflows: result.imported.workflows,
+      profiles: result.imported.profiles
+    }));
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -632,7 +638,7 @@ function createBlankWorkflow() {
   const id = `workflow-${Date.now().toString(36)}`;
   const workflow = {
     id,
-    name: "New Workflow",
+    name: t("newWorkflow"),
     description: "",
     workflow: {
       name: "new-workflow",
@@ -665,7 +671,7 @@ function createBlankProfile() {
   const id = `profile-${Date.now().toString(36)}`;
   const profile = {
     id,
-    name: "New Profile",
+    name: t("newProfile"),
     mode: "dry-run",
     platform: "",
     accountLabel: "",
@@ -711,6 +717,44 @@ async function api(url, options = {}) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message ?? `Request failed: ${response.status}`);
   return data;
+}
+
+function setLanguage(language) {
+  state.language = language === "zh" ? "zh" : "en";
+  localStorage.setItem("webops-forge-language", state.language);
+  elements.languageSelect.value = state.language;
+  applyStaticTranslations();
+  render();
+  if (state.selectedRunId) {
+    void selectRun(state.selectedRunId);
+  }
+}
+
+function applyStaticTranslations() {
+  document.documentElement.lang = state.language === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelector("#newWorkflowButton")?.setAttribute("aria-label", t("newWorkflow"));
+  document.querySelector("#newProfileButton")?.setAttribute("aria-label", t("newProfile"));
+  elements.languageSelect.setAttribute("aria-label", t("language"));
+  translateStatusOptions(elements.profileLoginState);
+  translateStatusOptions(elements.profileStatus);
+}
+
+function translateStatusOptions(select) {
+  for (const option of select.options) {
+    option.textContent = statusLabel(option.value);
+  }
+}
+
+function t(key, params = {}) {
+  const message = I18N[state.language]?.[key] ?? I18N.en[key] ?? key;
+  return message.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name) => String(params[name] ?? ""));
+}
+
+function statusLabel(value) {
+  return STATUS_LABELS[state.language]?.[value] ?? STATUS_LABELS.en[value] ?? String(value ?? "");
 }
 
 function parseJson(value, label) {
