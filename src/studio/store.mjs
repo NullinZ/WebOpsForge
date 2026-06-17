@@ -11,6 +11,7 @@ export class StudioStore {
     this.workflowsFile = path.join(dir, "workflows.json");
     this.runsFile = path.join(dir, "runs.json");
     this.profilesFile = path.join(dir, "profiles.json");
+    this.registryFile = path.join(dir, "registry.json");
     this.auditFile = path.join(dir, "audit.jsonl");
     this.runsDir = path.join(dir, "runs");
   }
@@ -21,6 +22,7 @@ export class StudioStore {
     await this.#ensureJsonFile(this.workflowsFile, []);
     await this.#ensureJsonFile(this.runsFile, []);
     await this.#ensureJsonFile(this.profilesFile, []);
+    await this.#ensureJsonFile(this.registryFile, createDefaultRegistry(this.clock));
 
     const workflows = await this.listWorkflows();
     if (workflows.length === 0) {
@@ -35,6 +37,47 @@ export class StudioStore {
     }
 
     await this.#migrateSeedData();
+  }
+
+  async getRegistry() {
+    return normalizeRegistry(await this.#readJson(this.registryFile, createDefaultRegistry(this.clock)), this.clock);
+  }
+
+  async saveRegistry(registry) {
+    const normalized = normalizeRegistry(registry, this.clock);
+    await this.#writeJson(this.registryFile, normalized);
+    await this.appendAudit({ type: "registry.saved" });
+    return normalized;
+  }
+
+  async saveRegistryItem(section, record) {
+    const registry = await this.getRegistry();
+    if (!registry[section]) throw new Error(`Unknown registry section: ${section}`);
+    const now = this.clock().toISOString();
+    const id = record.id || createId(section.slice(0, -1) || "registry");
+    const existing = registry[section].find((item) => item.id === id);
+    const normalized = normalizeRegistryItem(section, {
+      ...existing,
+      ...record,
+      id,
+      createdAt: existing?.createdAt ?? record.createdAt ?? now,
+      updatedAt: now
+    });
+    registry[section] = registry[section].filter((item) => item.id !== id);
+    registry[section].push(normalized);
+    const saved = await this.saveRegistry(registry);
+    await this.appendAudit({ type: "registry.item_saved", section, id, name: normalized.name });
+    return { registry: saved, item: normalized };
+  }
+
+  async deleteRegistryItem(section, id) {
+    const registry = await this.getRegistry();
+    if (!registry[section]) throw new Error(`Unknown registry section: ${section}`);
+    const previous = registry[section].length;
+    registry[section] = registry[section].filter((item) => item.id !== id);
+    const saved = await this.saveRegistry(registry);
+    await this.appendAudit({ type: "registry.item_deleted", section, id });
+    return { registry: saved, deleted: previous !== registry[section].length };
   }
 
   async listWorkflows() {
@@ -324,6 +367,7 @@ export class StudioStore {
       version: "0.1.0",
       workflows: await this.listWorkflows(),
       profiles: await this.listProfiles(),
+      registry: await this.getRegistry(),
       runs: await this.listRuns({ limit: 500 })
     };
   }
@@ -342,6 +386,10 @@ export class StudioStore {
         await this.saveProfile(profile);
         imported.profiles += 1;
       }
+    }
+    if (bundle.registry) {
+      await this.saveRegistry(bundle.registry);
+      imported.registry = 1;
     }
     await this.appendAudit({ type: "bundle.imported", imported });
     return { imported };
@@ -474,6 +522,191 @@ function addArtifactUrl(artifact, runId) {
   if (!artifact?.ref) return;
   const name = path.basename(String(artifact.ref));
   artifact.url = `/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`;
+}
+
+function normalizeRegistry(registry, clock = () => new Date()) {
+  const base = createDefaultRegistry(clock);
+  return {
+    version: registry?.version ?? base.version,
+    sites: normalizeRegistrySection("sites", registry?.sites ?? base.sites),
+    pages: normalizeRegistrySection("pages", registry?.pages ?? base.pages),
+    actions: normalizeRegistrySection("actions", registry?.actions ?? base.actions),
+    operations: normalizeRegistrySection("operations", registry?.operations ?? base.operations)
+  };
+}
+
+function normalizeRegistrySection(section, items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => normalizeRegistryItem(section, item))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+function normalizeRegistryItem(section, item = {}) {
+  const now = new Date().toISOString();
+  const base = {
+    id: item.id || createId(section.slice(0, -1) || "registry"),
+    name: item.name || item.id || "Untitled",
+    description: item.description ?? "",
+    status: item.status ?? "draft",
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    definition: item.definition && typeof item.definition === "object" ? item.definition : {},
+    createdAt: item.createdAt ?? now,
+    updatedAt: item.updatedAt ?? now
+  };
+
+  if (section === "sites") {
+    return {
+      ...base,
+      baseUrl: item.baseUrl ?? "",
+      authMode: item.authMode ?? "profile",
+      profileStrategy: item.profileStrategy ?? "one-profile-per-account"
+    };
+  }
+  if (section === "pages") {
+    return {
+      ...base,
+      siteId: item.siteId ?? "",
+      urlPattern: item.urlPattern ?? "",
+      stateSelector: item.stateSelector ?? "",
+      accountSelector: item.accountSelector ?? ""
+    };
+  }
+  if (section === "actions") {
+    return {
+      ...base,
+      siteId: item.siteId ?? "",
+      pageId: item.pageId ?? "",
+      actionType: item.actionType ?? "click",
+      selector: item.selector ?? "",
+      valueTemplate: item.valueTemplate ?? "",
+      outputName: item.outputName ?? ""
+    };
+  }
+  if (section === "operations") {
+    return {
+      ...base,
+      siteId: item.siteId ?? "",
+      actionIds: Array.isArray(item.actionIds) ? item.actionIds : [],
+      inputSchema: item.inputSchema && typeof item.inputSchema === "object" ? item.inputSchema : {},
+      outputSchema: item.outputSchema && typeof item.outputSchema === "object" ? item.outputSchema : {},
+      workflowTemplate: item.workflowTemplate && typeof item.workflowTemplate === "object" ? item.workflowTemplate : null
+    };
+  }
+  return base;
+}
+
+function createDefaultRegistry(clock = () => new Date()) {
+  const now = clock().toISOString();
+  return {
+    version: "0.1.0",
+    sites: [
+      {
+        id: "example-marketplace",
+        name: "Example Marketplace",
+        description: "Demo site registry entry used by the open-source Studio.",
+        status: "ready",
+        baseUrl: "https://example.local",
+        authMode: "profile",
+        profileStrategy: "one-profile-per-account",
+        tags: ["demo"],
+        definition: {
+          allowedHosts: ["example.local"],
+          notes: "Private adapters should register their own platform details outside this open-source sample."
+        },
+        createdAt: now,
+        updatedAt: now
+      }
+    ],
+    pages: [
+      {
+        id: "example-search-page",
+        siteId: "example-marketplace",
+        name: "Search Page",
+        description: "Search page with a query input and result title.",
+        status: "ready",
+        urlPattern: "https://example.local/search",
+        stateSelector: ".result-title",
+        accountSelector: ".account-name",
+        tags: ["demo", "search"],
+        definition: {
+          pageType: "search",
+          blockedSelectors: [".captcha", ".login-required"]
+        },
+        createdAt: now,
+        updatedAt: now
+      }
+    ],
+    actions: [
+      {
+        id: "example-open-search",
+        siteId: "example-marketplace",
+        pageId: "example-search-page",
+        name: "Open Search Page",
+        description: "Navigate to the search page.",
+        status: "ready",
+        actionType: "goto",
+        selector: "",
+        valueTemplate: "https://example.local/search",
+        outputName: "",
+        tags: ["demo"],
+        definition: { step: { action: "goto", url: "https://example.local/search" } },
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: "example-fill-query",
+        siteId: "example-marketplace",
+        pageId: "example-search-page",
+        name: "Fill Query",
+        description: "Fill the search keyword input.",
+        status: "ready",
+        actionType: "fill",
+        selector: "#q",
+        valueTemplate: "{{input.query}}",
+        outputName: "",
+        tags: ["demo"],
+        definition: { step: { action: "fill", selector: "#q", value: "{{input.query}}" } },
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: "example-extract-title",
+        siteId: "example-marketplace",
+        pageId: "example-search-page",
+        name: "Extract Result Title",
+        description: "Extract the first result title.",
+        status: "ready",
+        actionType: "extract",
+        selector: ".result-title",
+        valueTemplate: "",
+        outputName: "title",
+        tags: ["demo"],
+        definition: { step: { action: "extract", selector: ".result-title", name: "title" } },
+        createdAt: now,
+        updatedAt: now
+      }
+    ],
+    operations: [
+      {
+        id: "example-search-suppliers",
+        siteId: "example-marketplace",
+        name: "Search Suppliers",
+        description: "Reusable demo operation with browser and API branches.",
+        status: "ready",
+        actionIds: ["example-open-search", "example-fill-query", "example-extract-title"],
+        inputSchema: { query: { type: "string", required: true } },
+        outputSchema: { title: { type: "string" } },
+        tags: ["demo", "operation"],
+        definition: {
+          browserBranch: ["example-open-search", "example-fill-query", "example-extract-title"],
+          apiBranch: { method: "GET", url: "https://api.example.local/suppliers/search" }
+        },
+        workflowTemplate: createSampleWorkflowRecord(clock).workflow,
+        createdAt: now,
+        updatedAt: now
+      }
+    ]
+  };
 }
 
 function createDefaultProfiles(clock = () => new Date()) {
