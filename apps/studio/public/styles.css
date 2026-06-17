@@ -21,9 +21,16 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
+  height: 100%;
   min-width: 320px;
+  overflow: hidden;
   color: var(--text);
   background: var(--bg);
 }
@@ -108,9 +115,12 @@ label {
 }
 
 .shell {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: grid;
   grid-template-rows: 64px 1fr;
+  overflow: hidden;
 }
 
 .topbar {
@@ -216,6 +226,8 @@ h2 {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(420px, 1fr) minmax(320px, 420px);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .sidebar,
@@ -223,6 +235,7 @@ h2 {
 .inspector {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: auto;
 }
 
@@ -826,6 +839,7 @@ h2 {
 @media (max-width: 1120px) {
   .workspace {
     grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(220px, 0.42fr);
   }
 
   .registry-form-grid,
@@ -837,13 +851,13 @@ h2 {
     grid-column: 1 / -1;
     border-left: 0;
     border-top: 1px solid var(--line);
-    max-height: 520px;
+    max-height: none;
   }
 }
 
 @media (max-width: 760px) {
   .shell {
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .topbar,
@@ -855,6 +869,7 @@ h2 {
   .topbar {
     flex-direction: column;
     padding: 14px;
+    overflow: auto;
   }
 
   .language-control {
@@ -872,6 +887,10 @@ h2 {
   .registry-json-grid,
   .triple-editors {
     grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    grid-template-rows: minmax(104px, 0.28fr) minmax(0, 1fr) minmax(128px, 0.38fr);
   }
 
   .sidebar,
