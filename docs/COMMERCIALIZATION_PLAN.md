@@ -31,8 +31,14 @@ Implemented:
 - local Studio HTTP server
 - workflow library persistence
 - asynchronous run queue
+- browser/account profile registry
+- profile lease and release around runs
+- run cancellation and retry
 - persisted run history
 - evidence timeline and artifact serving
+- audit trail
+- workflow validation
+- bundle import/export
 - Node test coverage
 - CI workflow
 - npm package metadata and binary entrypoint
@@ -64,16 +70,16 @@ Acceptance:
 
 ### Milestone 2: Browser Worker Readiness
 
-Status: next.
+Status: partially implemented.
 
 Needed:
 
-- persistent profile registry
+- persistent profile registry: implemented
 - worker health endpoint
-- profile lock and lease model
+- profile lock and lease model: implemented for local queue
 - per-profile rate limits
-- run cancellation
-- retry policy
+- run cancellation: implemented
+- retry policy: implemented as manual retry
 - blocked-state classification
 - browser screenshot preview
 
@@ -84,12 +90,13 @@ Status: planned.
 Needed:
 
 - schema-aware editor validation
+- API workflow validation: implemented
 - step builder
 - selector test action
 - workflow version diff
 - run comparison
 - reusable driver fixtures
-- import/export workflow bundle
+- import/export workflow bundle: implemented
 
 ### Milestone 4: Operations Governance
 

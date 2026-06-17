@@ -17,8 +17,11 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button class="secondary" id="exportButton" type="button">Export</button>
+          <button class="secondary" id="importButton" type="button">Import</button>
           <button class="secondary" id="refreshButton" type="button">Refresh</button>
           <button class="primary" id="runButton" type="button">Run Workflow</button>
+          <input id="importFile" type="file" accept="application/json,.json" hidden />
         </div>
       </header>
 
@@ -29,6 +32,14 @@
             <button class="icon-button" id="newWorkflowButton" type="button" aria-label="New workflow">New</button>
           </div>
           <div id="workflowList" class="workflow-list"></div>
+
+          <div class="sidebar-block">
+            <div class="section-head">
+              <h2>Profiles</h2>
+              <button class="icon-button" id="newProfileButton" type="button" aria-label="New profile">New</button>
+            </div>
+            <div id="profileList" class="profile-list"></div>
+          </div>
         </aside>
 
         <section class="editor-pane">
@@ -53,7 +64,10 @@
           <div class="tab-panel active" id="workflowPanel">
             <div class="section-head compact">
               <h2>Definition</h2>
-              <button class="secondary" id="saveWorkflowButton" type="button">Save</button>
+              <div class="button-row">
+                <button class="secondary" id="validateWorkflowButton" type="button">Validate</button>
+                <button class="secondary" id="saveWorkflowButton" type="button">Save</button>
+              </div>
             </div>
             <textarea id="workflowJson" spellcheck="false"></textarea>
           </div>
@@ -66,6 +80,10 @@
                   <option value="dry-run">dry-run</option>
                   <option value="playwright">playwright</option>
                 </select>
+              </div>
+              <div>
+                <label for="profileSelect">Profile</label>
+                <select id="profileSelect"></select>
               </div>
               <div>
                 <label for="approvalToggle">Approval Gates</label>
@@ -90,6 +108,47 @@
                 <textarea id="driverConfigJson" spellcheck="false"></textarea>
               </div>
             </div>
+
+            <div class="profile-editor">
+              <div class="section-head compact">
+                <h2>Profile Details</h2>
+                <button class="secondary" id="saveProfileButton" type="button">Save Profile</button>
+              </div>
+              <div class="profile-grid">
+                <div>
+                  <label for="profileId">ID</label>
+                  <input id="profileId" />
+                </div>
+                <div>
+                  <label for="profileName">Name</label>
+                  <input id="profileName" />
+                </div>
+                <div>
+                  <label for="profileMode">Mode</label>
+                  <select id="profileMode">
+                    <option value="dry-run">dry-run</option>
+                    <option value="playwright">playwright</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="profileStatus">Status</label>
+                  <select id="profileStatus">
+                    <option value="ready">ready</option>
+                    <option value="busy">busy</option>
+                    <option value="blocked">blocked</option>
+                    <option value="disabled">disabled</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="profileDir">Profile Dir</label>
+                  <input id="profileDir" />
+                </div>
+                <div>
+                  <label for="profileRate">Max Per Minute</label>
+                  <input id="profileRate" type="number" min="0" />
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -105,6 +164,10 @@
               <h2>Selected Run</h2>
               <span id="selectedRunStatus" class="pill muted">none</span>
             </div>
+            <div class="button-row run-actions">
+              <button class="secondary" id="cancelRunButton" type="button">Cancel</button>
+              <button class="secondary" id="retryRunButton" type="button">Retry</button>
+            </div>
             <pre id="runSummary" class="summary-box"></pre>
           </div>
 
@@ -116,6 +179,11 @@
           <div class="inspector-section">
             <h2>Artifacts</h2>
             <div id="artifactList" class="artifact-list"></div>
+          </div>
+
+          <div class="inspector-section">
+            <h2>Audit</h2>
+            <div id="auditList" class="timeline"></div>
           </div>
         </aside>
       </main>

@@ -10,6 +10,8 @@ export class StudioStore {
     this.clock = clock;
     this.workflowsFile = path.join(dir, "workflows.json");
     this.runsFile = path.join(dir, "runs.json");
+    this.profilesFile = path.join(dir, "profiles.json");
+    this.auditFile = path.join(dir, "audit.jsonl");
     this.runsDir = path.join(dir, "runs");
   }
 
@@ -18,12 +20,18 @@ export class StudioStore {
     await mkdir(this.runsDir, { recursive: true });
     await this.#ensureJsonFile(this.workflowsFile, []);
     await this.#ensureJsonFile(this.runsFile, []);
+    await this.#ensureJsonFile(this.profilesFile, []);
 
     const workflows = await this.listWorkflows();
     if (workflows.length === 0) {
       const sample = createSampleWorkflowRecord(this.clock);
       sample.workflow = normalizeWorkflow(sample.workflow);
       await this.#writeJson(this.workflowsFile, [sample]);
+    }
+
+    const profiles = await this.listProfiles();
+    if (profiles.length === 0) {
+      await this.#writeJson(this.profilesFile, createDefaultProfiles(this.clock));
     }
   }
 
@@ -67,6 +75,98 @@ export class StudioStore {
     return { deleted: workflows.length !== next.length };
   }
 
+  async validateWorkflow(workflow) {
+    const normalized = normalizeWorkflow(workflow);
+    return {
+      ok: true,
+      workflow: normalized,
+      stepCount: normalized.steps.length,
+      actions: normalized.steps.map((step) => step.action)
+    };
+  }
+
+  async listProfiles() {
+    const profiles = await this.#readJson(this.profilesFile, []);
+    return profiles.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }
+
+  async getProfile(id) {
+    return (await this.listProfiles()).find((profile) => profile.id === id) ?? null;
+  }
+
+  async saveProfile(record) {
+    const profiles = await this.listProfiles();
+    const now = this.clock().toISOString();
+    const id = record.id || createId("profile");
+    const existing = profiles.find((profile) => profile.id === id);
+    const normalized = {
+      id,
+      name: record.name || existing?.name || id,
+      mode: record.mode || existing?.mode || "dry-run",
+      profileDir: record.profileDir ?? existing?.profileDir ?? "",
+      browserType: record.browserType ?? existing?.browserType ?? "chromium",
+      headless: Boolean(record.headless ?? existing?.headless ?? false),
+      status: record.status ?? existing?.status ?? "ready",
+      leasedRunId: record.leasedRunId ?? existing?.leasedRunId ?? null,
+      rateLimit: {
+        minDelayMs: Number(record.rateLimit?.minDelayMs ?? existing?.rateLimit?.minDelayMs ?? 0),
+        maxPerMinute: record.rateLimit?.maxPerMinute ?? existing?.rateLimit?.maxPerMinute ?? null
+      },
+      tags: Array.isArray(record.tags) ? record.tags : existing?.tags ?? [],
+      notes: record.notes ?? existing?.notes ?? "",
+      createdAt: existing?.createdAt ?? record.createdAt ?? now,
+      updatedAt: now,
+      lastRunAt: record.lastRunAt ?? existing?.lastRunAt ?? null
+    };
+    const next = profiles.filter((profile) => profile.id !== id);
+    next.push(normalized);
+    await this.#writeJson(this.profilesFile, next);
+    await this.appendAudit({ type: "profile.saved", profileId: id, profileName: normalized.name });
+    return normalized;
+  }
+
+  async deleteProfile(id) {
+    const profiles = await this.listProfiles();
+    const profile = profiles.find((item) => item.id === id);
+    const next = profiles.filter((item) => item.id !== id);
+    await this.#writeJson(this.profilesFile, next);
+    await this.appendAudit({ type: "profile.deleted", profileId: id, profileName: profile?.name ?? id });
+    return { deleted: profiles.length !== next.length };
+  }
+
+  async leaseProfile(profileId, runId) {
+    if (!profileId) return null;
+    const profile = await this.getProfile(profileId);
+    if (!profile) throw new Error(`Profile not found: ${profileId}`);
+    if (profile.status === "busy" && profile.leasedRunId && profile.leasedRunId !== runId) {
+      const error = new Error(`Profile is busy: ${profile.name}`);
+      error.code = "PROFILE_BUSY";
+      throw error;
+    }
+    const leased = await this.saveProfile({
+      ...profile,
+      status: "busy",
+      leasedRunId: runId,
+      lastRunAt: this.clock().toISOString()
+    });
+    await this.appendAudit({ type: "profile.leased", profileId, runId });
+    return leased;
+  }
+
+  async releaseProfile(profileId, runId, status = "ready") {
+    if (!profileId) return null;
+    const profile = await this.getProfile(profileId);
+    if (!profile) return null;
+    if (profile.leasedRunId && profile.leasedRunId !== runId) return profile;
+    const released = await this.saveProfile({
+      ...profile,
+      status,
+      leasedRunId: null
+    });
+    await this.appendAudit({ type: "profile.released", profileId, runId, status });
+    return released;
+  }
+
   async listRuns({ limit = 50 } = {}) {
     const runs = await this.#readJson(this.runsFile, []);
     return runs
@@ -78,21 +178,26 @@ export class StudioStore {
     return (await this.#readJson(this.runsFile, [])).find((run) => run.id === id) ?? null;
   }
 
-  async createRun({ workflowId, mode = "dry-run", input = {}, context = {}, driverConfig = {} }) {
+  async createRun({ workflowId, mode = "dry-run", input = {}, context = {}, driverConfig = {}, profileId = null, sourceRunId = null }) {
     const workflow = await this.getWorkflow(workflowId);
     if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
+    const profile = profileId ? await this.getProfile(profileId) : null;
+    if (profileId && !profile) throw new Error(`Profile not found: ${profileId}`);
     const now = this.clock().toISOString();
     const run = {
       id: createId("run"),
       workflowId,
       workflowName: workflow.name,
       mode,
+      profileId,
+      profileName: profile?.name ?? null,
       status: "queued",
       input,
       context,
       driverConfig,
       outputs: {},
       error: null,
+      sourceRunId,
       queuedAt: now,
       startedAt: null,
       completedAt: null,
@@ -104,6 +209,7 @@ export class StudioStore {
     runs.push(run);
     await this.#writeJson(this.runsFile, runs);
     await mkdir(run.evidenceDir, { recursive: true });
+    await this.appendAudit({ type: "run.created", runId: run.id, workflowId, profileId, sourceRunId });
     return run;
   }
 
@@ -111,9 +217,50 @@ export class StudioStore {
     const runs = await this.#readJson(this.runsFile, []);
     const index = runs.findIndex((run) => run.id === id);
     if (index === -1) throw new Error(`Run not found: ${id}`);
+    const previousStatus = runs[index].status;
     runs[index] = { ...runs[index], ...patch };
     await this.#writeJson(this.runsFile, runs);
+    if (patch.status && patch.status !== previousStatus) {
+      await this.appendAudit({ type: "run.status", runId: id, status: patch.status });
+    }
     return runs[index];
+  }
+
+  async cancelRun(id, reason = "operator") {
+    const run = await this.getRun(id);
+    if (!run) throw new Error(`Run not found: ${id}`);
+    if (["completed", "failed", "blocked", "canceled"].includes(run.status)) {
+      return { run, changed: false };
+    }
+    const status = run.status === "queued" ? "canceled" : "cancel_requested";
+    const patch = {
+      status,
+      error: {
+        name: "RunCancelled",
+        code: "RUN_CANCEL_REQUESTED",
+        message: `Cancellation requested: ${reason}`
+      },
+      completedAt: status === "canceled" ? this.clock().toISOString() : run.completedAt
+    };
+    const updated = await this.updateRun(id, patch);
+    await this.appendAudit({ type: "run.cancel_requested", runId: id, reason });
+    return { run: updated, changed: true };
+  }
+
+  async retryRun(id) {
+    const run = await this.getRun(id);
+    if (!run) throw new Error(`Run not found: ${id}`);
+    const retry = await this.createRun({
+      workflowId: run.workflowId,
+      mode: run.mode,
+      input: structuredClone(run.input ?? {}),
+      context: structuredClone(run.context ?? {}),
+      driverConfig: structuredClone(run.driverConfig ?? {}),
+      profileId: run.profileId ?? null,
+      sourceRunId: run.id
+    });
+    await this.appendAudit({ type: "run.retry_created", runId: retry.id, sourceRunId: run.id });
+    return retry;
   }
 
   getRunDirFor(runId) {
@@ -151,6 +298,60 @@ export class StudioStore {
         }
       }
       return artifacts.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async exportBundle() {
+    return {
+      exportedAt: this.clock().toISOString(),
+      version: "0.1.0",
+      workflows: await this.listWorkflows(),
+      profiles: await this.listProfiles(),
+      runs: await this.listRuns({ limit: 500 })
+    };
+  }
+
+  async importBundle(bundle) {
+    if (!bundle || typeof bundle !== "object") throw new Error("Import bundle must be an object");
+    const imported = { workflows: 0, profiles: 0 };
+    if (Array.isArray(bundle.workflows)) {
+      for (const workflow of bundle.workflows) {
+        await this.saveWorkflow(workflow);
+        imported.workflows += 1;
+      }
+    }
+    if (Array.isArray(bundle.profiles)) {
+      for (const profile of bundle.profiles) {
+        await this.saveProfile(profile);
+        imported.profiles += 1;
+      }
+    }
+    await this.appendAudit({ type: "bundle.imported", imported });
+    return { imported };
+  }
+
+  async appendAudit(record) {
+    await mkdir(path.dirname(this.auditFile), { recursive: true });
+    const normalized = {
+      createdAt: this.clock().toISOString(),
+      ...record
+    };
+    await writeFile(this.auditFile, `${JSON.stringify(normalized)}\n`, { flag: "a" });
+    return normalized;
+  }
+
+  async listAudit({ limit = 100 } = {}) {
+    try {
+      const content = await readFile(this.auditFile, "utf8");
+      return content
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .slice(-limit)
+        .reverse();
     } catch (error) {
       if (error.code === "ENOENT") return [];
       throw error;
@@ -213,4 +414,42 @@ function addArtifactUrl(artifact, runId) {
   if (!artifact?.ref) return;
   const name = path.basename(String(artifact.ref));
   artifact.url = `/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`;
+}
+
+function createDefaultProfiles(clock = () => new Date()) {
+  const now = clock().toISOString();
+  return [
+    {
+      id: "dry-run-demo",
+      name: "Dry-run Demo",
+      mode: "dry-run",
+      profileDir: "",
+      browserType: "chromium",
+      headless: true,
+      status: "ready",
+      leasedRunId: null,
+      rateLimit: { minDelayMs: 0, maxPerMinute: null },
+      tags: ["demo", "safe"],
+      notes: "Fixture-backed dry-run profile for local workflow validation.",
+      createdAt: now,
+      updatedAt: now,
+      lastRunAt: null
+    },
+    {
+      id: "local-chromium",
+      name: "Local Chromium",
+      mode: "playwright",
+      profileDir: "",
+      browserType: "chromium",
+      headless: false,
+      status: "ready",
+      leasedRunId: null,
+      rateLimit: { minDelayMs: 1000, maxPerMinute: 20 },
+      tags: ["local", "browser"],
+      notes: "Use for controlled local Playwright workflows. Add a profileDir before using logged-in sites.",
+      createdAt: now,
+      updatedAt: now,
+      lastRunAt: null
+    }
+  ];
 }

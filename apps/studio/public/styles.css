@@ -160,6 +160,13 @@ h2 {
   justify-content: flex-end;
 }
 
+.button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .workspace {
   min-height: 0;
   display: grid;
@@ -219,6 +226,7 @@ h2 {
 }
 
 .workflow-list,
+.profile-list,
 .run-list,
 .timeline,
 .artifact-list {
@@ -227,6 +235,7 @@ h2 {
 }
 
 .workflow-row,
+.profile-row,
 .run-row,
 .event-row,
 .artifact-row {
@@ -238,15 +247,23 @@ h2 {
 }
 
 .workflow-row,
+.profile-row,
 .run-row {
   width: 100%;
   display: block;
 }
 
 .workflow-row.active,
+.profile-row.active,
 .run-row.active {
   border-color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.sidebar-block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .row-title {
@@ -302,6 +319,18 @@ h2 {
   min-height: 360px;
 }
 
+.profile-editor {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -354,6 +383,11 @@ h2 {
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.run-actions {
+  justify-content: flex-start;
+  margin-bottom: 10px;
 }
 
 .event-row {
@@ -437,6 +471,7 @@ h2 {
   .workspace,
   .split-head,
   .run-grid,
+  .profile-grid,
   .triple-editors {
     grid-template-columns: 1fr;
   }

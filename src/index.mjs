@@ -10,5 +10,6 @@ export {
   WebOpsForgeError,
   ActionValidationError,
   BrowserActionError,
-  BrowserBlockedError
+  BrowserBlockedError,
+  RunCancelledError
 } from "./errors.mjs";

@@ -49,13 +49,35 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, {
       queue: queue.status(),
       dataDir: store.dir,
-      modes: ["dry-run", "playwright"]
+      modes: ["dry-run", "playwright"],
+      profiles: (await store.listProfiles()).length
     });
+    return;
+  }
+
+  if (method === "GET" && parts[0] === "audit") {
+    const limit = Number(url.searchParams.get("limit") ?? 100);
+    sendJson(res, 200, { audit: await store.listAudit({ limit }) });
+    return;
+  }
+
+  if (method === "GET" && parts[0] === "export") {
+    sendJson(res, 200, await store.exportBundle());
+    return;
+  }
+
+  if (method === "POST" && parts[0] === "import") {
+    sendJson(res, 200, await store.importBundle(await readJsonBody(req)));
     return;
   }
 
   if (parts[0] === "workflows") {
     await handleWorkflows(req, res, parts);
+    return;
+  }
+
+  if (parts[0] === "profiles") {
+    await handleProfiles(req, res, parts);
     return;
   }
 
@@ -69,6 +91,12 @@ async function handleApi(req, res, url) {
 
 async function handleWorkflows(req, res, parts) {
   const id = parts[1] ? decodeURIComponent(parts[1]) : null;
+
+  if (req.method === "POST" && id === "validate") {
+    const body = await readJsonBody(req);
+    sendJson(res, 200, await store.validateWorkflow(body.workflow ?? body));
+    return;
+  }
 
   if (req.method === "GET" && !id) {
     sendJson(res, 200, { workflows: await store.listWorkflows() });
@@ -110,7 +138,8 @@ async function handleWorkflows(req, res, parts) {
       mode: body.mode ?? defaults.mode ?? "dry-run",
       input: body.input ?? defaults.input ?? {},
       context: body.context ?? defaults.context ?? {},
-      driverConfig: body.driverConfig ?? defaults.driverConfig ?? {}
+      driverConfig: body.driverConfig ?? defaults.driverConfig ?? {},
+      profileId: body.profileId ?? defaults.profileId ?? null
     });
     queue.enqueue(run.id);
     sendJson(res, 202, { run });
@@ -118,6 +147,38 @@ async function handleWorkflows(req, res, parts) {
   }
 
   sendJson(res, 405, { error: { message: "Workflow method not allowed" } });
+}
+
+async function handleProfiles(req, res, parts) {
+  const id = parts[1] ? decodeURIComponent(parts[1]) : null;
+
+  if (req.method === "GET" && !id) {
+    sendJson(res, 200, { profiles: await store.listProfiles() });
+    return;
+  }
+
+  if (req.method === "POST" && !id) {
+    sendJson(res, 201, { profile: await store.saveProfile(await readJsonBody(req)) });
+    return;
+  }
+
+  if (req.method === "GET" && id) {
+    sendJson(res, 200, { profile: await requireProfile(id) });
+    return;
+  }
+
+  if (req.method === "PUT" && id) {
+    const current = await requireProfile(id);
+    sendJson(res, 200, { profile: await store.saveProfile({ ...current, ...(await readJsonBody(req)), id }) });
+    return;
+  }
+
+  if (req.method === "DELETE" && id) {
+    sendJson(res, 200, await store.deleteProfile(id));
+    return;
+  }
+
+  sendJson(res, 405, { error: { message: "Profile method not allowed" } });
 }
 
 async function handleRuns(req, res, parts, url) {
@@ -136,6 +197,20 @@ async function handleRuns(req, res, parts, url) {
       events: await store.readRunEvents(id),
       artifacts: await store.listRunArtifacts(id)
     });
+    return;
+  }
+
+  if (req.method === "POST" && id && parts[2] === "cancel") {
+    await requireRun(id);
+    sendJson(res, 200, await queue.cancel(id, "operator"));
+    return;
+  }
+
+  if (req.method === "POST" && id && parts[2] === "retry") {
+    await requireRun(id);
+    const retry = await store.retryRun(id);
+    queue.enqueue(retry.id);
+    sendJson(res, 202, { run: retry });
     return;
   }
 
@@ -172,6 +247,16 @@ async function requireRun(id) {
     throw error;
   }
   return run;
+}
+
+async function requireProfile(id) {
+  const profile = await store.getProfile(id);
+  if (!profile) {
+    const error = new Error(`Profile not found: ${id}`);
+    error.statusCode = 404;
+    throw error;
+  }
+  return profile;
 }
 
 async function readJsonBody(req) {

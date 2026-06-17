@@ -1,4 +1,4 @@
-import { BrowserActionError, BrowserBlockedError } from "./errors.mjs";
+import { BrowserActionError, BrowserBlockedError, RunCancelledError } from "./errors.mjs";
 import { createMemoryEvidenceStore } from "./evidence.mjs";
 import { createRateLimiter } from "./rate-limit.mjs";
 import { normalizeWorkflow } from "./workflow.mjs";
@@ -14,7 +14,7 @@ export class WebOpsRunner {
     this.clock = clock;
   }
 
-  async run(workflowInput, { input = {}, context = {}, runId = createRunId() } = {}) {
+  async run(workflowInput, { input = {}, context = {}, runId = createRunId(), abortSignal = null } = {}) {
     const workflow = normalizeWorkflow(workflowInput);
     const outputs = {};
     const state = {
@@ -22,11 +22,13 @@ export class WebOpsRunner {
       workflow: { name: workflow.name, version: workflow.version },
       input,
       context,
-      outputs
+      outputs,
+      abortSignal
     };
     await this.evidenceStore.append({ type: "workflow.started", runId, workflow: state.workflow });
 
     for (const step of workflow.steps) {
+      assertNotCancelled(state);
       await this.#runStep({ workflow, step, state });
     }
 
@@ -46,6 +48,7 @@ export class WebOpsRunner {
   }
 
   async #runStep({ workflow, step, state }) {
+    assertNotCancelled(state);
     const startedAt = this.clock().toISOString();
     const scope = { input: state.input, context: state.context, outputs: state.outputs };
     assertTemplateReady(step, scope);
@@ -64,6 +67,7 @@ export class WebOpsRunner {
 
     try {
       const result = await this.#dispatch(resolved, { timeoutMs, state });
+      assertNotCancelled(state);
       if (resolved.action === "extract") {
         state.outputs[resolved.name] = result.value;
       }
@@ -199,6 +203,14 @@ export class WebOpsRunner {
       contentType: image.contentType ?? "image/png",
       bytes: image.bytes,
       text: image.text
+    });
+  }
+}
+
+function assertNotCancelled(state) {
+  if (state.abortSignal?.aborted) {
+    throw new RunCancelledError("Run cancelled by operator", {
+      details: { runId: state.runId }
     });
   }
 }

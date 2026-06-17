@@ -54,6 +54,7 @@ export interface RunnerState {
   input: Record<string, unknown>;
   context: Record<string, unknown>;
   outputs: Record<string, unknown>;
+  abortSignal?: AbortSignal | null;
 }
 
 export interface RunnerResult {
@@ -112,6 +113,7 @@ export class WebOpsRunner {
     input?: Record<string, unknown>;
     context?: Record<string, unknown>;
     runId?: string;
+    abortSignal?: AbortSignal | null;
   }): Promise<RunnerResult>;
   close(): Promise<void>;
 }
@@ -147,6 +149,7 @@ export interface StudioWorkflowRecord {
   workflow: NormalizedWorkflow;
   defaultRun?: {
     mode?: "dry-run" | "playwright" | string;
+    profileId?: string | null;
     input?: Record<string, unknown>;
     context?: Record<string, unknown>;
     driverConfig?: Record<string, unknown>;
@@ -159,18 +162,41 @@ export interface StudioRunRecord {
   id: string;
   workflowId: string;
   workflowName: string;
+  profileId: string | null;
+  profileName: string | null;
   mode: string;
-  status: "queued" | "running" | "completed" | "blocked" | "failed";
+  status: "queued" | "running" | "completed" | "blocked" | "failed" | "cancel_requested" | "canceled";
   input: Record<string, unknown>;
   context: Record<string, unknown>;
   driverConfig: Record<string, unknown>;
   outputs: Record<string, unknown>;
   error: Record<string, unknown> | null;
+  sourceRunId: string | null;
   queuedAt: string;
   startedAt: string | null;
   completedAt: string | null;
   durationMs: number | null;
   evidenceDir: string;
+}
+
+export interface StudioProfileRecord {
+  id: string;
+  name: string;
+  mode: "dry-run" | "playwright" | string;
+  profileDir: string;
+  browserType: string;
+  headless: boolean;
+  status: "ready" | "busy" | "blocked" | "disabled" | string;
+  leasedRunId: string | null;
+  rateLimit: {
+    minDelayMs: number;
+    maxPerMinute: number | null;
+  };
+  tags: string[];
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt: string | null;
 }
 
 export class StudioStore {
@@ -181,20 +207,34 @@ export class StudioStore {
   getWorkflow(id: string): Promise<StudioWorkflowRecord | null>;
   saveWorkflow(record: Partial<StudioWorkflowRecord> & { workflow: Workflow | NormalizedWorkflow }): Promise<StudioWorkflowRecord>;
   deleteWorkflow(id: string): Promise<{ deleted: boolean }>;
+  validateWorkflow(workflow: Workflow | NormalizedWorkflow): Promise<{ ok: true; workflow: NormalizedWorkflow; stepCount: number; actions: string[] }>;
+  listProfiles(): Promise<StudioProfileRecord[]>;
+  getProfile(id: string): Promise<StudioProfileRecord | null>;
+  saveProfile(record: Partial<StudioProfileRecord> & { id?: string; name?: string }): Promise<StudioProfileRecord>;
+  deleteProfile(id: string): Promise<{ deleted: boolean }>;
+  leaseProfile(profileId: string | null, runId: string): Promise<StudioProfileRecord | null>;
+  releaseProfile(profileId: string | null, runId: string, status?: string): Promise<StudioProfileRecord | null>;
   listRuns(options?: { limit?: number }): Promise<StudioRunRecord[]>;
   getRun(id: string): Promise<StudioRunRecord | null>;
-  createRun(options: { workflowId: string; mode?: string; input?: Record<string, unknown>; context?: Record<string, unknown>; driverConfig?: Record<string, unknown> }): Promise<StudioRunRecord>;
+  createRun(options: { workflowId: string; mode?: string; input?: Record<string, unknown>; context?: Record<string, unknown>; driverConfig?: Record<string, unknown>; profileId?: string | null; sourceRunId?: string | null }): Promise<StudioRunRecord>;
   updateRun(id: string, patch: Partial<StudioRunRecord>): Promise<StudioRunRecord>;
+  cancelRun(id: string, reason?: string): Promise<{ run: StudioRunRecord; changed: boolean }>;
+  retryRun(id: string): Promise<StudioRunRecord>;
   getRunDirFor(runId: string): string;
   readRunEvents(runId: string): Promise<Record<string, unknown>[]>;
   listRunArtifacts(runId: string): Promise<Array<{ name: string; size: number; url: string }>>;
   getArtifactPath(runId: string, artifactName: string): string;
+  exportBundle(): Promise<{ exportedAt: string; version: string; workflows: StudioWorkflowRecord[]; profiles: StudioProfileRecord[]; runs: StudioRunRecord[] }>;
+  importBundle(bundle: { workflows?: StudioWorkflowRecord[]; profiles?: StudioProfileRecord[] }): Promise<{ imported: { workflows: number; profiles: number } }>;
+  appendAudit(record: Record<string, unknown>): Promise<Record<string, unknown>>;
+  listAudit(options?: { limit?: number }): Promise<Record<string, unknown>[]>;
   reset(): Promise<void>;
 }
 
 export function createRunQueue(options: { store: StudioStore; concurrency?: number; clock?: () => Date }): {
   enqueue(runId: string): void;
-  status(): { pending: number; active: number; concurrency: number };
+  cancel(runId: string, reason?: string): Promise<{ run: StudioRunRecord; changed: boolean }>;
+  status(): { pending: number; active: number; concurrency: number; activeRunIds: string[]; pendingRunIds: string[] };
 };
 
 export class WebOpsForgeError extends Error {
@@ -209,3 +249,4 @@ export class BrowserBlockedError extends WebOpsForgeError {
   reason: string;
   recoverable: boolean;
 }
+export class RunCancelledError extends WebOpsForgeError {}

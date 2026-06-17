@@ -74,12 +74,17 @@ It includes:
 
 - workflow library and JSON editor
 - dry-run and Playwright execution modes
+- browser/account profile registry
 - run input, context, and driver configuration
 - queued run execution
+- run cancellation and retry
 - persisted run history
 - evidence timeline
 - artifact links for screenshots and dry-run captures
 - approval gates through the `approval` workflow action
+- audit trail
+- workflow validation
+- bundle import/export
 
 The Studio stores local state in `.webops-forge/` by default. Override it with:
 
@@ -182,14 +187,25 @@ The Studio exposes a local REST API:
 
 - `GET /api/health`
 - `GET /api/runtime`
+- `GET /api/audit`
+- `GET /api/export`
+- `POST /api/import`
 - `GET /api/workflows`
+- `POST /api/workflows/validate`
 - `POST /api/workflows`
 - `GET /api/workflows/:id`
 - `PUT /api/workflows/:id`
 - `DELETE /api/workflows/:id`
 - `POST /api/workflows/:id/runs`
+- `GET /api/profiles`
+- `POST /api/profiles`
+- `GET /api/profiles/:id`
+- `PUT /api/profiles/:id`
+- `DELETE /api/profiles/:id`
 - `GET /api/runs`
 - `GET /api/runs/:id`
+- `POST /api/runs/:id/cancel`
+- `POST /api/runs/:id/retry`
 - `GET /api/runs/:id/events`
 - `GET /api/runs/:id/artifacts/:name`
 

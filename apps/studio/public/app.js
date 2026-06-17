@@ -1,7 +1,10 @@
 const state = {
   workflows: [],
+  profiles: [],
   runs: [],
+  audit: [],
   selectedWorkflowId: null,
+  selectedProfileId: null,
   selectedRunId: null,
   runtime: null,
   polling: null
@@ -11,27 +14,45 @@ const elements = {
   runtimeStatus: document.querySelector("#runtimeStatus"),
   queueStatus: document.querySelector("#queueStatus"),
   workflowList: document.querySelector("#workflowList"),
+  profileList: document.querySelector("#profileList"),
   runList: document.querySelector("#runList"),
   workflowName: document.querySelector("#workflowName"),
   workflowId: document.querySelector("#workflowId"),
   workflowDescription: document.querySelector("#workflowDescription"),
   workflowJson: document.querySelector("#workflowJson"),
   runMode: document.querySelector("#runMode"),
+  profileSelect: document.querySelector("#profileSelect"),
   approvalToggle: document.querySelector("#approvalToggle"),
   runInputJson: document.querySelector("#runInputJson"),
   runContextJson: document.querySelector("#runContextJson"),
   driverConfigJson: document.querySelector("#driverConfigJson"),
+  profileId: document.querySelector("#profileId"),
+  profileName: document.querySelector("#profileName"),
+  profileMode: document.querySelector("#profileMode"),
+  profileStatus: document.querySelector("#profileStatus"),
+  profileDir: document.querySelector("#profileDir"),
+  profileRate: document.querySelector("#profileRate"),
   selectedRunStatus: document.querySelector("#selectedRunStatus"),
   runSummary: document.querySelector("#runSummary"),
   eventTimeline: document.querySelector("#eventTimeline"),
   artifactList: document.querySelector("#artifactList"),
+  auditList: document.querySelector("#auditList"),
+  importFile: document.querySelector("#importFile"),
   toast: document.querySelector("#toast")
 };
 
 document.querySelector("#refreshButton").addEventListener("click", () => refreshAll());
+document.querySelector("#exportButton").addEventListener("click", () => exportBundle());
+document.querySelector("#importButton").addEventListener("click", () => elements.importFile.click());
+document.querySelector("#importFile").addEventListener("change", (event) => importBundle(event.target.files[0]));
 document.querySelector("#runButton").addEventListener("click", () => runSelectedWorkflow());
 document.querySelector("#saveWorkflowButton").addEventListener("click", () => saveSelectedWorkflow());
+document.querySelector("#validateWorkflowButton").addEventListener("click", () => validateSelectedWorkflow());
 document.querySelector("#newWorkflowButton").addEventListener("click", () => createBlankWorkflow());
+document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
+document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
+document.querySelector("#cancelRunButton").addEventListener("click", () => cancelSelectedRun());
+document.querySelector("#retryRunButton").addEventListener("click", () => retrySelectedRun());
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 });
@@ -40,8 +61,9 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadWorkflows(), loadRuns()]);
+  await Promise.all([loadRuntime(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit()]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
+  if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   render();
 }
 
@@ -54,15 +76,27 @@ async function loadWorkflows() {
   state.workflows = data.workflows;
 }
 
+async function loadProfiles() {
+  const data = await api("/api/profiles");
+  state.profiles = data.profiles;
+}
+
 async function loadRuns() {
   const data = await api("/api/runs?limit=30");
   state.runs = data.runs;
 }
 
+async function loadAudit() {
+  const data = await api("/api/audit?limit=30");
+  state.audit = data.audit;
+}
+
 function render() {
   renderRuntime();
   renderWorkflows();
+  renderProfiles();
   renderRuns();
+  renderAudit();
 }
 
 function renderRuntime() {
@@ -85,6 +119,33 @@ function renderWorkflows() {
     `;
     button.addEventListener("click", () => selectWorkflow(workflow.id));
     elements.workflowList.append(button);
+  }
+}
+
+function renderProfiles() {
+  elements.profileList.innerHTML = "";
+  elements.profileSelect.innerHTML = `<option value="">no profile</option>`;
+  for (const profile of state.profiles) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = `${profile.name} (${profile.mode})`;
+    elements.profileSelect.append(option);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `profile-row ${profile.id === state.selectedProfileId ? "active" : ""}`;
+    button.innerHTML = `
+      <span class="row-title">${escapeHtml(profile.name)}</span>
+      <span class="row-meta">${escapeHtml(profile.status)} · ${escapeHtml(profile.mode)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
+    `;
+    button.addEventListener("click", () => selectProfile(profile.id));
+    elements.profileList.append(button);
+  }
+
+  const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
+  const selectedProfile = workflow?.defaultRun?.profileId ?? state.selectedProfileId ?? "";
+  if ([...elements.profileSelect.options].some((option) => option.value === selectedProfile)) {
+    elements.profileSelect.value = selectedProfile;
   }
 }
 
@@ -112,11 +173,25 @@ function selectWorkflow(id) {
   elements.workflowDescription.value = workflow.description ?? "";
   elements.workflowJson.value = formatJson(workflow.workflow);
   elements.runMode.value = workflow.defaultRun?.mode ?? "dry-run";
+  elements.profileSelect.value = workflow.defaultRun?.profileId ?? "";
   elements.approvalToggle.value = "keep";
   elements.runInputJson.value = formatJson(workflow.defaultRun?.input ?? {});
   elements.runContextJson.value = formatJson(workflow.defaultRun?.context ?? {});
   elements.driverConfigJson.value = formatJson(workflow.defaultRun?.driverConfig ?? {});
   renderWorkflows();
+}
+
+function selectProfile(id) {
+  const profile = state.profiles.find((item) => item.id === id);
+  if (!profile) return;
+  state.selectedProfileId = id;
+  elements.profileId.value = profile.id;
+  elements.profileName.value = profile.name;
+  elements.profileMode.value = profile.mode;
+  elements.profileStatus.value = profile.status;
+  elements.profileDir.value = profile.profileDir ?? "";
+  elements.profileRate.value = profile.rateLimit?.maxPerMinute ?? "";
+  renderProfiles();
 }
 
 async function selectRun(id) {
@@ -133,6 +208,8 @@ function renderRunDetail({ run, events, artifacts }) {
     id: run.id,
     status: run.status,
     mode: run.mode,
+    profile: run.profileName,
+    sourceRunId: run.sourceRunId,
     durationMs: run.durationMs,
     outputs: run.outputs,
     error: run.error
@@ -168,6 +245,22 @@ function renderRunDetail({ run, events, artifacts }) {
   }
 }
 
+function renderAudit() {
+  elements.auditList.innerHTML = "";
+  if (state.audit.length === 0) {
+    elements.auditList.innerHTML = `<div class="event-meta">No audit records</div>`;
+  }
+  for (const item of state.audit) {
+    const row = document.createElement("div");
+    row.className = "event-row";
+    row.innerHTML = `
+      <strong>${escapeHtml(item.type)}</strong>
+      <span class="event-meta">${escapeHtml(item.runId ?? item.workflowId ?? item.profileName ?? "")} · ${formatTime(item.createdAt)}</span>
+    `;
+    elements.auditList.append(row);
+  }
+}
+
 async function saveSelectedWorkflow() {
   try {
     const id = elements.workflowId.value.trim();
@@ -178,6 +271,7 @@ async function saveSelectedWorkflow() {
       workflow: parseJson(elements.workflowJson.value, "Workflow"),
       defaultRun: {
         mode: elements.runMode.value,
+        profileId: elements.profileSelect.value || null,
         input: parseJson(elements.runInputJson.value, "Input"),
         context: parseJson(elements.runContextJson.value, "Context"),
         driverConfig: parseJson(elements.driverConfigJson.value, "Driver")
@@ -195,6 +289,46 @@ async function saveSelectedWorkflow() {
   }
 }
 
+async function validateSelectedWorkflow() {
+  try {
+    const workflow = parseJson(elements.workflowJson.value, "Workflow");
+    const result = await api("/api/workflows/validate", {
+      method: "POST",
+      body: { workflow }
+    });
+    showToast(`Workflow valid: ${result.stepCount} steps`);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function saveSelectedProfile() {
+  try {
+    const id = elements.profileId.value.trim();
+    const body = {
+      id,
+      name: elements.profileName.value.trim(),
+      mode: elements.profileMode.value,
+      status: elements.profileStatus.value,
+      profileDir: elements.profileDir.value.trim(),
+      rateLimit: {
+        maxPerMinute: elements.profileRate.value ? Number(elements.profileRate.value) : null
+      }
+    };
+    const exists = state.profiles.some((profile) => profile.id === id);
+    const data = await api(exists ? `/api/profiles/${encodeURIComponent(id)}` : "/api/profiles", {
+      method: exists ? "PUT" : "POST",
+      body
+    });
+    await Promise.all([loadProfiles(), loadAudit()]);
+    selectProfile(data.profile.id);
+    render();
+    showToast("Profile saved");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 async function runSelectedWorkflow() {
   if (!state.selectedWorkflowId) return;
   try {
@@ -204,6 +338,7 @@ async function runSelectedWorkflow() {
       method: "POST",
       body: {
         mode: elements.runMode.value,
+        profileId: elements.profileSelect.value || null,
         input: parseJson(elements.runInputJson.value, "Input"),
         context,
         driverConfig: parseJson(elements.driverConfigJson.value, "Driver")
@@ -216,6 +351,61 @@ async function runSelectedWorkflow() {
     showToast("Run queued");
   } catch (error) {
     showToast(error.message);
+  }
+}
+
+async function cancelSelectedRun() {
+  if (!state.selectedRunId) return;
+  try {
+    await api(`/api/runs/${encodeURIComponent(state.selectedRunId)}/cancel`, { method: "POST", body: {} });
+    await refreshAll();
+    await selectRun(state.selectedRunId);
+    showToast("Cancellation requested");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function retrySelectedRun() {
+  if (!state.selectedRunId) return;
+  try {
+    const data = await api(`/api/runs/${encodeURIComponent(state.selectedRunId)}/retry`, { method: "POST", body: {} });
+    state.selectedRunId = data.run.id;
+    await refreshAll();
+    await selectRun(data.run.id);
+    showToast("Retry queued");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function exportBundle() {
+  try {
+    const bundle = await api("/api/export");
+    const blob = new Blob([formatJson(bundle)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `webops-forge-export-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("Export ready");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function importBundle(file) {
+  if (!file) return;
+  try {
+    const bundle = JSON.parse(await file.text());
+    const result = await api("/api/import", { method: "POST", body: bundle });
+    await refreshAll();
+    showToast(`Imported ${result.imported.workflows} workflows and ${result.imported.profiles} profiles`);
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    elements.importFile.value = "";
   }
 }
 
@@ -235,6 +425,7 @@ function createBlankWorkflow() {
     },
     defaultRun: {
       mode: "dry-run",
+      profileId: "dry-run-demo",
       input: {},
       context: {},
       driverConfig: {
@@ -251,6 +442,21 @@ function createBlankWorkflow() {
   renderWorkflows();
 }
 
+function createBlankProfile() {
+  const id = `profile-${Date.now().toString(36)}`;
+  const profile = {
+    id,
+    name: "New Profile",
+    mode: "dry-run",
+    status: "ready",
+    profileDir: "",
+    rateLimit: { maxPerMinute: null }
+  };
+  state.profiles.unshift(profile);
+  selectProfile(id);
+  renderProfiles();
+}
+
 function selectTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("active"));
@@ -261,7 +467,7 @@ function startPolling() {
   state.polling = setInterval(async () => {
     const hasActive = state.runs.some((run) => ["queued", "running"].includes(run.status));
     if (!hasActive && !state.selectedRunId) return;
-    await Promise.all([loadRuntime(), loadRuns()]);
+    await Promise.all([loadRuntime(), loadRuns(), loadProfiles(), loadAudit()]);
     render();
     if (state.selectedRunId) await selectRun(state.selectedRunId);
   }, 1500);

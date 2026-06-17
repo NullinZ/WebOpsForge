@@ -6,17 +6,35 @@ import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
 export function createRunQueue({ store, concurrency = 1, clock = () => new Date() }) {
   const pending = [];
   const active = new Set();
+  const controllers = new Map();
 
   return {
     enqueue(runId) {
-      pending.push(runId);
+      if (!pending.includes(runId) && !active.has(runId)) {
+        pending.push(runId);
+      }
       void drain();
+    },
+    async cancel(runId, reason = "operator") {
+      const pendingIndex = pending.indexOf(runId);
+      if (pendingIndex !== -1) {
+        pending.splice(pendingIndex, 1);
+        return store.cancelRun(runId, reason);
+      }
+      const controller = controllers.get(runId);
+      if (controller) {
+        controller.abort(reason);
+        return store.cancelRun(runId, reason);
+      }
+      return store.cancelRun(runId, reason);
     },
     status() {
       return {
         pending: pending.length,
         active: active.size,
-        concurrency
+        concurrency,
+        activeRunIds: Array.from(active),
+        pendingRunIds: pending.slice()
       };
     }
   };
@@ -25,8 +43,11 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     while (active.size < concurrency && pending.length > 0) {
       const runId = pending.shift();
       active.add(runId);
+      const controller = new AbortController();
+      controllers.set(runId, controller);
       void execute(runId).finally(() => {
         active.delete(runId);
+        controllers.delete(runId);
         void drain();
       });
     }
@@ -35,6 +56,13 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
   async function execute(runId) {
     const run = await store.getRun(runId);
     if (!run) return;
+    if (run.status === "canceled" || run.status === "cancel_requested") {
+      await store.updateRun(runId, {
+        status: "canceled",
+        completedAt: clock().toISOString()
+      });
+      return;
+    }
     const workflowRecord = await store.getWorkflow(run.workflowId);
     if (!workflowRecord) {
       await store.updateRun(runId, {
@@ -46,6 +74,7 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     }
 
     const startedAt = clock();
+    let leasedProfile = null;
     await store.updateRun(runId, {
       status: "running",
       startedAt: startedAt.toISOString()
@@ -54,12 +83,14 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     const evidenceStore = createFileEvidenceStore({ dir: store.getRunDirFor(runId) });
     let driver = null;
     try {
-      driver = await createDriver(run);
+      leasedProfile = await store.leaseProfile(run.profileId, runId);
+      driver = await createDriver(run, leasedProfile);
       const runner = new WebOpsRunner({ driver, evidenceStore, clock });
       const result = await runner.run(workflowRecord.workflow, {
         input: run.input,
         context: run.context,
-        runId
+        runId,
+        abortSignal: controllers.get(runId)?.signal ?? null
       });
       const completedAt = clock();
       await runner.close();
@@ -69,11 +100,13 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
         completedAt: completedAt.toISOString(),
         durationMs: completedAt.getTime() - startedAt.getTime()
       });
+      await store.releaseProfile(run.profileId, runId, "ready");
     } catch (error) {
       const completedAt = clock();
       await driver?.close?.().catch(() => {});
+      await store.releaseProfile(run.profileId, runId, error.code === "BROWSER_BLOCKED" ? "blocked" : "ready");
       await store.updateRun(runId, {
-        status: error.code === "BROWSER_BLOCKED" ? "blocked" : "failed",
+        status: error.code === "RUN_CANCELLED" ? "canceled" : error.code === "BROWSER_BLOCKED" ? "blocked" : "failed",
         error: serializeError(error),
         completedAt: completedAt.toISOString(),
         durationMs: completedAt.getTime() - startedAt.getTime()
@@ -82,11 +115,25 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
   }
 }
 
-async function createDriver(run) {
-  if (run.mode === "playwright") {
-    return createPlaywrightDriver(run.driverConfig ?? {});
+async function createDriver(run, profile = null) {
+  const mergedConfig = mergeDriverConfig(run.driverConfig ?? {}, profile);
+  if (run.mode === "playwright" || profile?.mode === "playwright") {
+    return createPlaywrightDriver(mergedConfig);
   }
-  return createDryRunDriver(run.driverConfig ?? {});
+  return createDryRunDriver(mergedConfig);
+}
+
+function mergeDriverConfig(driverConfig, profile) {
+  if (!profile) return driverConfig;
+  if (profile.mode === "playwright") {
+    return {
+      browserType: profile.browserType ?? "chromium",
+      profileDir: profile.profileDir || driverConfig.profileDir || null,
+      headless: Boolean(profile.headless),
+      ...driverConfig
+    };
+  }
+  return driverConfig;
 }
 
 function serializeError(error) {

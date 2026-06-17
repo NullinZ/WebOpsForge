@@ -33,3 +33,9 @@ export class BrowserBlockedError extends WebOpsForgeError {
     this.recoverable = recoverable;
   }
 }
+
+export class RunCancelledError extends WebOpsForgeError {
+  constructor(message = "Run cancelled", options = {}) {
+    super(message, { code: "RUN_CANCELLED", ...options });
+  }
+}
