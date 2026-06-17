@@ -6,8 +6,11 @@ const state = {
   selectedWorkflowId: null,
   selectedProfileId: null,
   selectedRunId: null,
+  selectedRunDetail: null,
   runtime: null,
   language: localStorage.getItem("webops-forge-language") || "en",
+  graphPositions: {},
+  graphDrag: null,
   polling: null
 };
 
@@ -21,6 +24,7 @@ const I18N = {
     approvalKeep: "use context",
     artifacts: "Artifacts",
     audit: "Audit",
+    autoLayout: "Auto Layout",
     cancel: "Cancel",
     checkSession: "Check Session",
     context: "Context",
@@ -31,10 +35,15 @@ const I18N = {
     evidence: "Evidence",
     export: "Export",
     exportReady: "Export ready",
+    graph: "Graph",
     import: "Import",
     importedBundle: "Imported {workflows} workflows and {profiles} profiles",
     input: "Input",
     language: "Language",
+    legendCompleted: "completed",
+    legendFailed: "failed",
+    legendIdle: "idle",
+    legendRunning: "running",
     loginState: "Login State",
     maxPerMinute: "Max Per Minute",
     mode: "Mode",
@@ -44,6 +53,7 @@ const I18N = {
     newWorkflow: "New Workflow",
     noArtifacts: "No artifacts",
     noAuditRecords: "No audit records",
+    noWorkflowSelected: "No workflow selected",
     noProfile: "no profile",
     none: "none",
     operationModes: "Operation Modes",
@@ -70,6 +80,8 @@ const I18N = {
     stepCount: "{count} steps",
     validate: "Validate",
     workflow: "Workflow",
+    workflowGraph: "Workflow Graph",
+    workflowGraphNote: "Drag nodes to arrange the execution map.",
     workflowSaved: "Workflow saved",
     workflowValid: "Workflow valid: {count} steps",
     workflows: "Workflows",
@@ -86,6 +98,7 @@ const I18N = {
     approvalKeep: "使用上下文",
     artifacts: "产物",
     audit: "审计",
+    autoLayout: "自动布局",
     cancel: "取消",
     checkSession: "检查会话",
     context: "上下文",
@@ -96,10 +109,15 @@ const I18N = {
     evidence: "证据",
     export: "导出",
     exportReady: "导出已准备好",
+    graph: "图谱",
     import: "导入",
     importedBundle: "已导入 {workflows} 个工作流和 {profiles} 个 Profile",
     input: "输入",
     language: "语言",
+    legendCompleted: "已完成",
+    legendFailed: "失败",
+    legendIdle: "空闲",
+    legendRunning: "运行中",
     loginState: "登录态",
     maxPerMinute: "每分钟上限",
     mode: "模式",
@@ -109,6 +127,7 @@ const I18N = {
     newWorkflow: "新建工作流",
     noArtifacts: "暂无产物",
     noAuditRecords: "暂无审计记录",
+    noWorkflowSelected: "未选择工作流",
     noProfile: "不使用 Profile",
     none: "无",
     operationModes: "动作执行方式",
@@ -135,6 +154,8 @@ const I18N = {
     stepCount: "{count} 步",
     validate: "校验",
     workflow: "工作流",
+    workflowGraph: "工作流图谱",
+    workflowGraphNote: "拖动节点来整理执行流程。",
     workflowSaved: "工作流已保存",
     workflowValid: "工作流有效：{count} 步",
     workflows: "工作流",
@@ -154,10 +175,12 @@ const STATUS_LABELS = {
     completed: "completed",
     disabled: "disabled",
     failed: "failed",
+    idle: "idle",
     "logged-out": "logged out",
     queued: "queued",
     ready: "ready",
     running: "running",
+    skipped: "skipped",
     unchecked: "unchecked",
     unknown: "unknown"
   },
@@ -170,10 +193,12 @@ const STATUS_LABELS = {
     completed: "已完成",
     disabled: "已禁用",
     failed: "失败",
+    idle: "空闲",
     "logged-out": "未登录",
     queued: "排队中",
     ready: "就绪",
     running: "运行中",
+    skipped: "已跳过",
     unchecked: "未检查",
     unknown: "未知"
   }
@@ -189,6 +214,9 @@ const elements = {
   workflowName: document.querySelector("#workflowName"),
   workflowId: document.querySelector("#workflowId"),
   workflowDescription: document.querySelector("#workflowDescription"),
+  workflowGraph: document.querySelector("#workflowGraph"),
+  graphEdges: document.querySelector("#graphEdges"),
+  graphNodeLayer: document.querySelector("#graphNodeLayer"),
   workflowJson: document.querySelector("#workflowJson"),
   runMode: document.querySelector("#runMode"),
   profileSelect: document.querySelector("#profileSelect"),
@@ -219,6 +247,7 @@ const elements = {
 
 elements.languageSelect.value = state.language;
 elements.languageSelect.addEventListener("change", () => setLanguage(elements.languageSelect.value));
+document.querySelector("#autoLayoutButton").addEventListener("click", () => autoLayoutSelectedWorkflow());
 document.querySelector("#refreshButton").addEventListener("click", () => refreshAll());
 document.querySelector("#exportButton").addEventListener("click", () => exportBundle());
 document.querySelector("#importButton").addEventListener("click", () => elements.importFile.click());
@@ -235,6 +264,8 @@ document.querySelector("#retryRunButton").addEventListener("click", () => retryS
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 });
+document.addEventListener("pointermove", (event) => moveGraphNode(event));
+document.addEventListener("pointerup", () => endGraphDrag());
 
 applyStaticTranslations();
 await refreshAll();
@@ -276,6 +307,7 @@ function render() {
   renderWorkflows();
   renderProfiles();
   renderRuns();
+  renderGraph();
   renderAudit();
 }
 
@@ -349,6 +381,247 @@ function renderRuns() {
   }
 }
 
+function renderGraph() {
+  const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
+  if (!workflow) {
+    elements.graphNodeLayer.innerHTML = `<div class="graph-empty">${escapeHtml(t("noWorkflowSelected"))}</div>`;
+    elements.graphEdges.innerHTML = "";
+    return;
+  }
+
+  const graph = buildGraphData(workflow.workflow);
+  const statusByStep = buildStepStatusMap(
+    state.selectedRunDetail?.run?.workflowId === workflow.id ? state.selectedRunDetail.events : []
+  );
+  const positions = loadGraphPositions(workflow.id, graph.nodes);
+  state.graphPositions = positions;
+  const size = graphCanvasSize(graph.nodes, positions);
+
+  elements.workflowGraph.style.minWidth = `${size.width}px`;
+  elements.workflowGraph.style.minHeight = `${size.height}px`;
+  elements.graphNodeLayer.innerHTML = "";
+  elements.graphNodeLayer.style.width = `${size.width}px`;
+  elements.graphNodeLayer.style.height = `${size.height}px`;
+
+  for (const node of graph.nodes) {
+    const position = positions[node.id];
+    const status = statusByStep[node.id] ?? "idle";
+    const item = document.createElement("div");
+    item.className = `workflow-node ${node.depth ? "child" : "root"} ${statusClassForNode(status)}`;
+    item.dataset.nodeId = node.id;
+    item.style.left = `${position.x}px`;
+    item.style.top = `${position.y}px`;
+    item.innerHTML = `
+      <div class="node-head">
+        <span class="node-action">${escapeHtml(node.action)}</span>
+        <span class="node-status">${escapeHtml(statusLabel(status))}</span>
+      </div>
+      <strong>${escapeHtml(node.label)}</strong>
+      <span class="node-meta">${escapeHtml(node.meta)}</span>
+    `;
+    item.addEventListener("pointerdown", (event) => startGraphDrag(event, node.id));
+    elements.graphNodeLayer.append(item);
+  }
+
+  renderGraphEdges(graph.edges, positions, size);
+}
+
+function buildGraphData(workflow) {
+  const nodes = [];
+  const edges = [];
+  let previousTopLevel = null;
+  for (const [topIndex, step] of (workflow.steps ?? []).entries()) {
+    nodes.push(createGraphNode(step, { depth: 0, topIndex, childIndex: 0, branch: "main" }));
+    if (previousTopLevel) edges.push({ from: previousTopLevel, to: step.id, kind: "main" });
+    previousTopLevel = step.id;
+
+    if (step.action === "operation") {
+      let previousBrowserStep = null;
+      for (const [childIndex, child] of (step.browserSteps ?? []).entries()) {
+        nodes.push(createGraphNode(child, { depth: 1, topIndex, childIndex, branch: "browser" }));
+        edges.push({ from: step.id, to: child.id, kind: "branch" });
+        if (previousBrowserStep) edges.push({ from: previousBrowserStep, to: child.id, kind: "branch" });
+        previousBrowserStep = child.id;
+      }
+      if (step.api) {
+        nodes.push(createGraphNode(step.api, {
+          depth: 1,
+          topIndex,
+          childIndex: (step.browserSteps ?? []).length,
+          branch: "api"
+        }));
+        edges.push({ from: step.id, to: step.api.id, kind: "branch" });
+      }
+    }
+  }
+  return { nodes, edges };
+}
+
+function createGraphNode(step, { depth, topIndex, childIndex, branch }) {
+  return {
+    id: step.id,
+    action: step.action,
+    depth,
+    topIndex,
+    childIndex,
+    branch,
+    label: shortStepLabel(step),
+    meta: stepMeta(step, branch)
+  };
+}
+
+function shortStepLabel(step) {
+  const parts = String(step.id ?? step.action).split(".");
+  return parts.at(-1) || step.action;
+}
+
+function stepMeta(step, branch) {
+  const details = [];
+  if (branch && branch !== "main") details.push(branch);
+  if (step.selector) details.push(step.selector);
+  if (step.url) details.push(shorten(step.url));
+  if (step.name) details.push(step.name);
+  if (step.includes) details.push(`includes ${step.includes}`);
+  return details.join(" · ") || step.id;
+}
+
+function buildStepStatusMap(events = []) {
+  const map = {};
+  for (const event of events) {
+    if (!event.stepId) continue;
+    if (event.type === "step.started") map[event.stepId] = "running";
+    if (event.type === "step.completed") map[event.stepId] = "completed";
+    if (event.type === "step.failed") map[event.stepId] = event.error?.code === "BROWSER_BLOCKED" ? "blocked" : "failed";
+    if (event.type === "step.skipped_after_error") map[event.stepId] = "skipped";
+  }
+  return map;
+}
+
+function loadGraphPositions(workflowId, nodes) {
+  const defaults = defaultGraphPositions(nodes);
+  try {
+    const saved = JSON.parse(localStorage.getItem(graphStorageKey(workflowId)) || "{}");
+    return Object.fromEntries(nodes.map((node) => [node.id, saved[node.id] ?? defaults[node.id]]));
+  } catch {
+    return defaults;
+  }
+}
+
+function defaultGraphPositions(nodes) {
+  return Object.fromEntries(nodes.map((node) => [
+    node.id,
+    node.depth === 0
+      ? { x: 48 + node.topIndex * 270, y: 58 }
+      : { x: 48 + node.topIndex * 270 + (node.childIndex % 2) * 230, y: 220 + Math.floor(node.childIndex / 2) * 124 }
+  ]));
+}
+
+function graphCanvasSize(nodes, positions) {
+  const maxX = Math.max(...nodes.map((node) => positions[node.id]?.x ?? 0), 780);
+  const maxY = Math.max(...nodes.map((node) => positions[node.id]?.y ?? 0), 420);
+  return { width: maxX + 280, height: maxY + 160 };
+}
+
+function renderGraphEdges(edges, positions, size = null) {
+  const graphSize = size ?? graphCanvasSize(
+    Object.keys(positions).map((id) => ({ id })),
+    positions
+  );
+  elements.graphEdges.setAttribute("width", graphSize.width);
+  elements.graphEdges.setAttribute("height", graphSize.height);
+  elements.graphEdges.setAttribute("viewBox", `0 0 ${graphSize.width} ${graphSize.height}`);
+  elements.graphEdges.innerHTML = `
+    <defs>
+      <marker id="graphArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="#9aa8b7"></path>
+      </marker>
+    </defs>
+    ${edges.map((edge) => edgePath(edge, positions)).join("")}
+  `;
+}
+
+function edgePath(edge, positions) {
+  const from = positions[edge.from];
+  const to = positions[edge.to];
+  if (!from || !to) return "";
+  const startX = from.x + 220;
+  const startY = from.y + 45;
+  const endX = to.x;
+  const endY = to.y + 45;
+  const curve = Math.max(60, Math.abs(endX - startX) / 2);
+  const path = `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
+  return `<path class="graph-edge ${edge.kind}" d="${path}" marker-end="url(#graphArrow)"></path>`;
+}
+
+function autoLayoutSelectedWorkflow() {
+  const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
+  if (!workflow) return;
+  const graph = buildGraphData(workflow.workflow);
+  state.graphPositions = defaultGraphPositions(graph.nodes);
+  saveGraphPositions(workflow.id, state.graphPositions);
+  renderGraph();
+}
+
+function startGraphDrag(event, nodeId) {
+  if (event.button !== 0) return;
+  const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
+  if (!workflow) return;
+  const current = state.graphPositions[nodeId];
+  if (!current) return;
+  event.preventDefault();
+  event.currentTarget.classList.add("dragging");
+  state.graphDrag = {
+    workflowId: workflow.id,
+    nodeId,
+    startX: event.clientX,
+    startY: event.clientY,
+    originX: current.x,
+    originY: current.y
+  };
+}
+
+function moveGraphNode(event) {
+  if (!state.graphDrag) return;
+  const { nodeId, startX, startY, originX, originY } = state.graphDrag;
+  const next = {
+    x: Math.max(16, originX + event.clientX - startX),
+    y: Math.max(16, originY + event.clientY - startY)
+  };
+  state.graphPositions[nodeId] = next;
+  const node = elements.graphNodeLayer.querySelector(`[data-node-id="${cssEscape(nodeId)}"]`);
+  if (node) {
+    node.style.left = `${next.x}px`;
+    node.style.top = `${next.y}px`;
+  }
+  const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
+  if (workflow) {
+    const graph = buildGraphData(workflow.workflow);
+    const size = graphCanvasSize(graph.nodes, state.graphPositions);
+    renderGraphEdges(graph.edges, state.graphPositions, size);
+  }
+}
+
+function endGraphDrag() {
+  if (!state.graphDrag) return;
+  const workflowId = state.graphDrag.workflowId;
+  const node = elements.graphNodeLayer.querySelector(`[data-node-id="${cssEscape(state.graphDrag.nodeId)}"]`);
+  node?.classList.remove("dragging");
+  state.graphDrag = null;
+  saveGraphPositions(workflowId, state.graphPositions);
+}
+
+function saveGraphPositions(workflowId, positions) {
+  try {
+    localStorage.setItem(graphStorageKey(workflowId), JSON.stringify(positions));
+  } catch {
+    // Local storage is best-effort; graph dragging still works for the current session.
+  }
+}
+
+function graphStorageKey(workflowId) {
+  return `webops-forge-graph:${workflowId}`;
+}
+
 function selectWorkflow(id) {
   const workflow = state.workflows.find((item) => item.id === id);
   if (!workflow) return;
@@ -365,6 +638,7 @@ function selectWorkflow(id) {
   elements.runContextJson.value = formatJson(workflow.defaultRun?.context ?? {});
   elements.driverConfigJson.value = formatJson(workflow.defaultRun?.driverConfig ?? {});
   renderWorkflows();
+  renderGraph();
 }
 
 function selectProfile(id) {
@@ -388,8 +662,10 @@ function selectProfile(id) {
 async function selectRun(id) {
   state.selectedRunId = id;
   const data = await api(`/api/runs/${encodeURIComponent(id)}`);
+  state.selectedRunDetail = data;
   renderRunDetail(data);
   renderRuns();
+  renderGraph();
 }
 
 function renderRunDetail({ run, events, artifacts }) {
@@ -814,6 +1090,15 @@ function statusClass(status) {
   return "muted";
 }
 
+function statusClassForNode(status) {
+  if (status === "completed") return "completed";
+  if (status === "failed") return "failed";
+  if (status === "blocked") return "blocked";
+  if (status === "running" || status === "queued") return "running";
+  if (status === "skipped") return "skipped";
+  return "ready";
+}
+
 function formatTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -823,6 +1108,15 @@ function formatBytes(value) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function shorten(value, max = 42) {
+  const text = String(value ?? "");
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function cssEscape(value) {
+  return String(value).replace(/["\\]/g, "\\$&");
 }
 
 function showToast(message) {

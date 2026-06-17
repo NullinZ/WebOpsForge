@@ -64,11 +64,34 @@
           <input id="workflowDescription" autocomplete="off" />
 
           <div class="tabs" role="tablist">
-            <button class="tab active" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
+            <button class="tab active" data-tab="graph" type="button" data-i18n="graph">Graph</button>
+            <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
             <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
           </div>
 
-          <div class="tab-panel active" id="workflowPanel">
+          <div class="tab-panel active" id="graphPanel">
+            <div class="section-head compact">
+              <div>
+                <h2 data-i18n="workflowGraph">Workflow Graph</h2>
+                <p class="section-note" data-i18n="workflowGraphNote">Drag nodes to arrange the execution map.</p>
+              </div>
+              <div class="button-row">
+                <button class="secondary" id="autoLayoutButton" type="button" data-i18n="autoLayout">Auto Layout</button>
+              </div>
+            </div>
+            <div class="graph-toolbar">
+              <span class="graph-legend ready" data-i18n="legendIdle">idle</span>
+              <span class="graph-legend running" data-i18n="legendRunning">running</span>
+              <span class="graph-legend completed" data-i18n="legendCompleted">completed</span>
+              <span class="graph-legend failed" data-i18n="legendFailed">failed</span>
+            </div>
+            <div id="workflowGraph" class="workflow-graph" aria-label="Workflow graph">
+              <svg id="graphEdges" class="graph-edges" aria-hidden="true"></svg>
+              <div id="graphNodeLayer" class="graph-node-layer"></div>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="workflowPanel">
             <div class="section-head compact">
               <h2 data-i18n="definition">Definition</h2>
               <div class="button-row">

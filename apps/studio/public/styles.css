@@ -338,6 +338,182 @@ h2 {
   display: block;
 }
 
+.section-note {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workflow-graph {
+  position: relative;
+  min-height: 540px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px),
+    var(--surface);
+  background-size: 28px 28px;
+}
+
+.graph-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.graph-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.graph-legend::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.graph-legend.running::before {
+  background: var(--accent);
+}
+
+.graph-legend.completed::before {
+  background: var(--success);
+}
+
+.graph-legend.failed::before {
+  background: var(--danger);
+}
+
+.graph-edges,
+.graph-node-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.graph-edges {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.graph-edge {
+  fill: none;
+  stroke: #9aa8b7;
+  stroke-width: 2;
+}
+
+.graph-edge.branch {
+  stroke-dasharray: 6 5;
+}
+
+.workflow-node {
+  position: absolute;
+  width: 220px;
+  min-height: 92px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(21, 32, 43, 0.12);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.workflow-node.child {
+  width: 210px;
+  min-height: 86px;
+  background: #fbfcfe;
+}
+
+.workflow-node.dragging {
+  z-index: 5;
+  cursor: grabbing;
+  box-shadow: 0 16px 34px rgba(21, 32, 43, 0.18);
+}
+
+.workflow-node.completed {
+  border-color: var(--success);
+  box-shadow: inset 4px 0 0 var(--success), 0 10px 24px rgba(21, 32, 43, 0.12);
+}
+
+.workflow-node.running {
+  border-color: var(--accent);
+  box-shadow: inset 4px 0 0 var(--accent), 0 10px 24px rgba(21, 32, 43, 0.12);
+}
+
+.workflow-node.failed {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger), 0 10px 24px rgba(21, 32, 43, 0.12);
+}
+
+.workflow-node.blocked {
+  border-color: #d69122;
+  box-shadow: inset 4px 0 0 #d69122, 0 10px 24px rgba(21, 32, 43, 0.12);
+}
+
+.workflow-node.skipped {
+  opacity: 0.72;
+}
+
+.node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.node-action,
+.node-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.node-action {
+  max-width: 110px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.node-status {
+  max-width: 86px;
+  color: var(--muted);
+}
+
+.workflow-node strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.node-meta {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.graph-empty {
+  padding: 22px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .triple-editors {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
