@@ -17,13 +17,11 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <label class="language-control" for="languageSelect">
-            <span data-i18n="language">Language</span>
-            <select id="languageSelect" aria-label="Language">
-              <option value="en">English</option>
-              <option value="zh">中文</option>
-            </select>
-          </label>
+          <button class="language-control language-toggle" id="languageToggle" type="button" aria-label="Language">
+            <span class="lang-option" data-lang-code="en">EN</span>
+            <span class="lang-divider">/</span>
+            <span class="lang-option" data-lang-code="zh">中文</span>
+          </button>
           <button class="secondary" id="exportButton" type="button" data-i18n="export">Export</button>
           <button class="secondary" id="importButton" type="button" data-i18n="import">Import</button>
           <button class="secondary" id="refreshButton" type="button" data-i18n="refresh">Refresh</button>

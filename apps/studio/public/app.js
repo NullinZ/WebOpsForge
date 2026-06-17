@@ -287,7 +287,7 @@ const REGISTRY_SECTIONS = [
 ];
 
 const elements = {
-  languageSelect: document.querySelector("#languageSelect"),
+  languageToggle: document.querySelector("#languageToggle"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
   queueStatus: document.querySelector("#queueStatus"),
   registryMetrics: document.querySelector("#registryMetrics"),
@@ -349,8 +349,7 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
-elements.languageSelect.value = state.language;
-elements.languageSelect.addEventListener("change", () => setLanguage(elements.languageSelect.value));
+elements.languageToggle.addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
 document.querySelector("#autoLayoutButton").addEventListener("click", () => autoLayoutSelectedWorkflow());
 document.querySelector("#refreshButton").addEventListener("click", () => refreshAll());
 document.querySelector("#exportButton").addEventListener("click", () => exportBundle());
@@ -1554,7 +1553,6 @@ async function api(url, options = {}) {
 function setLanguage(language) {
   state.language = language === "zh" ? "zh" : "en";
   localStorage.setItem("webops-forge-language", state.language);
-  elements.languageSelect.value = state.language;
   applyStaticTranslations();
   render();
   if (state.selectedRunId) {
@@ -1569,7 +1567,11 @@ function applyStaticTranslations() {
   });
   document.querySelector("#newWorkflowButton")?.setAttribute("aria-label", t("newWorkflow"));
   document.querySelector("#newProfileButton")?.setAttribute("aria-label", t("newProfile"));
-  elements.languageSelect.setAttribute("aria-label", t("language"));
+  elements.languageToggle.setAttribute("aria-label", t("language"));
+  elements.languageToggle.setAttribute("aria-pressed", String(state.language === "zh"));
+  elements.languageToggle.querySelectorAll("[data-lang-code]").forEach((node) => {
+    node.classList.toggle("active", node.dataset.langCode === state.language);
+  });
   translateStatusOptions(elements.profileLoginState);
   translateStatusOptions(elements.profileStatus);
   translateStatusOptions(elements.registryItemStatus);
