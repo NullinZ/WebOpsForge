@@ -1,0 +1,9 @@
+node_modules/
+*.tgz
+.DS_Store
+coverage/
+.nyc_output/
+dist/
+tmp/
+artifacts/
+events.jsonl

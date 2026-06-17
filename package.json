@@ -1,0 +1,56 @@
+{
+  "name": "webops-forge",
+  "version": "0.1.0",
+  "description": "Deterministic, auditable web operations workflow runner for browser automation.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./src/index.mjs",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs"
+    }
+  },
+  "files": [
+    "src",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "check": "npm test && node examples/dry-run-search.mjs",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "keywords": [
+    "browser-automation",
+    "playwright",
+    "workflow",
+    "web-operations",
+    "evidence",
+    "audit"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/NullinZ/WebOpsForge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NullinZ/WebOpsForge/issues"
+  },
+  "homepage": "https://github.com/NullinZ/WebOpsForge#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  }
+}
