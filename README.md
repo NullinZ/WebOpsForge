@@ -73,10 +73,12 @@ WebOps Studio is the local commercial-grade control surface for WebOps Forge.
 It includes:
 
 - workflow library and JSON editor
+- registry center for sites, pages, page actions, and reusable operations
 - dry-run and Playwright execution modes
 - browser/account profile registry
 - profile session check metadata
 - operation-level UI/API execution switching
+- one-click workflow generation from registered operations
 - run input, context, and driver configuration
 - queued run execution
 - run cancellation and retry
@@ -169,6 +171,17 @@ Log in once manually with that profile, then run workflows against it. The Profi
 - `sessionCheck`: URL and selector used by Studio's Check Session action.
 
 Studio can check a profile by opening the configured URL and reading the account selector. It does not store account passwords and must not be used to bypass CAPTCHA, 2FA, or platform verification.
+
+## Sites, Page Actions, And Operations
+
+The Studio registry models reusable web operations before they become workflows:
+
+- `sites`: platform or tenant-level targets, including base URL and profile strategy.
+- `pages`: concrete page patterns under a site, including state and account selectors.
+- `actions`: reusable page actions such as `goto`, `fill`, `click`, `extract`, or `apiCall`.
+- `operations`: business-level capabilities that reference action IDs and can switch between browser and API execution branches.
+
+Use the Registry tab to register these resources, then build a workflow from an operation. Private adapters can ship their own registry packs without putting credentials, account data, or proprietary selectors in the open-source package.
 
 ## Workflow Actions
 

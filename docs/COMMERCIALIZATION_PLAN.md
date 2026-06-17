@@ -30,11 +30,13 @@ Implemented:
 - structured errors
 - approval workflow action
 - local Studio HTTP server
+- Studio registry center for sites, pages, actions, and operations
 - workflow library persistence
 - asynchronous run queue
 - browser/account profile registry
 - profile session check metadata and API
 - operation action with browser/API branches
+- workflow generation from registered operations
 - API call action with dry-run fixtures and Playwright browser-session support
 - profile lease and release around runs
 - run cancellation and retry
@@ -90,13 +92,15 @@ Needed:
 
 ### Milestone 3: Workflow Authoring Quality
 
-Status: planned.
+Status: partially implemented.
 
 Needed:
 
 - schema-aware editor validation
 - API workflow validation: implemented
-- step builder
+- site/page/action/operation registry: implemented
+- operation-to-workflow builder: implemented
+- step builder from registered actions: partially implemented
 - selector test action
 - workflow version diff
 - run comparison

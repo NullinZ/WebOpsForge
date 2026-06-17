@@ -240,10 +240,70 @@ export interface StudioProfileRecord {
   lastCheckedAt: string | null;
 }
 
+export interface StudioRegistryBaseRecord {
+  id: string;
+  name: string;
+  description: string;
+  status: "draft" | "ready" | "deprecated" | string;
+  tags: string[];
+  definition: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudioRegistrySiteRecord extends StudioRegistryBaseRecord {
+  baseUrl: string;
+  authMode: "profile" | "none" | string;
+  profileStrategy: "one-profile-per-account" | string;
+}
+
+export interface StudioRegistryPageRecord extends StudioRegistryBaseRecord {
+  siteId: string;
+  urlPattern: string;
+  stateSelector: string;
+  accountSelector: string;
+}
+
+export interface StudioRegistryActionRecord extends StudioRegistryBaseRecord {
+  siteId: string;
+  pageId: string;
+  actionType: WorkflowAction | string;
+  selector: string;
+  valueTemplate: string;
+  outputName: string;
+}
+
+export interface StudioRegistryOperationRecord extends StudioRegistryBaseRecord {
+  siteId: string;
+  actionIds: string[];
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  workflowTemplate: Workflow | NormalizedWorkflow | null;
+}
+
+export interface StudioRegistry {
+  version: string;
+  sites: StudioRegistrySiteRecord[];
+  pages: StudioRegistryPageRecord[];
+  actions: StudioRegistryActionRecord[];
+  operations: StudioRegistryOperationRecord[];
+}
+
+export type StudioRegistrySection = "sites" | "pages" | "actions" | "operations";
+export type StudioRegistryRecord =
+  | StudioRegistrySiteRecord
+  | StudioRegistryPageRecord
+  | StudioRegistryActionRecord
+  | StudioRegistryOperationRecord;
+
 export class StudioStore {
   constructor(options?: { dir?: string; clock?: () => Date });
   dir: string;
   init(): Promise<void>;
+  getRegistry(): Promise<StudioRegistry>;
+  saveRegistry(registry: Partial<StudioRegistry>): Promise<StudioRegistry>;
+  saveRegistryItem(section: StudioRegistrySection, record: Partial<StudioRegistryRecord> & { id?: string }): Promise<{ registry: StudioRegistry; item: StudioRegistryRecord }>;
+  deleteRegistryItem(section: StudioRegistrySection, id: string): Promise<{ registry: StudioRegistry; deleted: boolean }>;
   listWorkflows(): Promise<StudioWorkflowRecord[]>;
   getWorkflow(id: string): Promise<StudioWorkflowRecord | null>;
   saveWorkflow(record: Partial<StudioWorkflowRecord> & { workflow: Workflow | NormalizedWorkflow }): Promise<StudioWorkflowRecord>;
@@ -265,8 +325,8 @@ export class StudioStore {
   readRunEvents(runId: string): Promise<Record<string, unknown>[]>;
   listRunArtifacts(runId: string): Promise<Array<{ name: string; size: number; url: string }>>;
   getArtifactPath(runId: string, artifactName: string): string;
-  exportBundle(): Promise<{ exportedAt: string; version: string; workflows: StudioWorkflowRecord[]; profiles: StudioProfileRecord[]; runs: StudioRunRecord[] }>;
-  importBundle(bundle: { workflows?: StudioWorkflowRecord[]; profiles?: StudioProfileRecord[] }): Promise<{ imported: { workflows: number; profiles: number } }>;
+  exportBundle(): Promise<{ exportedAt: string; version: string; registry: StudioRegistry; workflows: StudioWorkflowRecord[]; profiles: StudioProfileRecord[]; runs: StudioRunRecord[] }>;
+  importBundle(bundle: { registry?: Partial<StudioRegistry>; workflows?: StudioWorkflowRecord[]; profiles?: StudioProfileRecord[] }): Promise<{ imported: { registry?: number; workflows: number; profiles: number } }>;
   appendAudit(record: Record<string, unknown>): Promise<Record<string, unknown>>;
   listAudit(options?: { limit?: number }): Promise<Record<string, unknown>[]>;
   reset(): Promise<void>;

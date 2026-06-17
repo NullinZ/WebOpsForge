@@ -7,6 +7,11 @@ const state = {
   selectedProfileId: null,
   selectedRunId: null,
   selectedRunDetail: null,
+  registry: null,
+  selectedRegistrySection: "sites",
+  selectedRegistryId: null,
+  selectedRegistryDraft: null,
+  registryFormKey: null,
   runtime: null,
   language: localStorage.getItem("webops-forge-language") || "en",
   graphPositions: {},
@@ -25,11 +30,15 @@ const I18N = {
     artifacts: "Artifacts",
     audit: "Audit",
     autoLayout: "Auto Layout",
+    baseUrl: "Base URL",
+    buildWorkflow: "Build Workflow",
     cancel: "Cancel",
     checkSession: "Check Session",
     context: "Context",
     dataDir: "data: {path}",
+    delete: "Delete",
     definition: "Definition",
+    definitionJson: "Definition JSON",
     description: "Description",
     driver: "Driver",
     evidence: "Evidence",
@@ -37,26 +46,38 @@ const I18N = {
     exportReady: "Export ready",
     graph: "Graph",
     import: "Import",
-    importedBundle: "Imported {workflows} workflows and {profiles} profiles",
+    importedBundle: "Imported {workflows} workflows, {profiles} profiles, and {registry} registry set",
     input: "Input",
     language: "Language",
     legendCompleted: "completed",
     legendFailed: "failed",
     legendIdle: "idle",
     legendRunning: "running",
+    actionIds: "Action IDs",
+    actionRegistry: "Action Registry",
+    actionType: "Action Type",
+    actions: "Actions",
     loginState: "Login State",
     maxPerMinute: "Max Per Minute",
     mode: "Mode",
     name: "Name",
     new: "New",
     newProfile: "New Profile",
+    newResource: "New Resource",
     newWorkflow: "New Workflow",
     noArtifacts: "No artifacts",
     noAuditRecords: "No audit records",
+    noRegistryRecords: "No resources registered",
     noWorkflowSelected: "No workflow selected",
     noProfile: "no profile",
     none: "none",
     operationModes: "Operation Modes",
+    operationRegistry: "Operation Registry",
+    operations: "Operations",
+    outputName: "Output Name",
+    page: "Page",
+    pageRegistry: "Page Registry",
+    pages: "Pages",
     platform: "Platform",
     profile: "Profile",
     profileDetails: "Profile Details",
@@ -65,6 +86,13 @@ const I18N = {
     profileSaved: "Profile saved",
     profiles: "Profiles",
     refresh: "Refresh",
+    registry: "Registry",
+    registryCenter: "Registry Center",
+    registryCenterNote: "Register sites, pages, page actions, and reusable operations before composing workflows.",
+    deleteResourceConfirm: "Delete this resource?",
+    resourceDeleted: "Resource deleted",
+    resourceIdRequired: "Resource ID is required",
+    resourceSaved: "Resource saved",
     retry: "Retry",
     retryQueued: "Retry queued",
     runConfig: "Run Config",
@@ -73,13 +101,23 @@ const I18N = {
     runs: "Runs",
     save: "Save",
     saveProfile: "Save Profile",
+    saveResource: "Save Resource",
+    schemaJson: "Schema JSON",
     selectedRun: "Selected Run",
+    selector: "Selector",
     sessionCheckUrl: "Session Check URL",
     sessionResult: "Session {state}{account}",
+    site: "Site",
+    siteRegistry: "Site Registry",
+    sites: "Sites",
     status: "Status",
     stepCount: "{count} steps",
+    tags: "Tags",
+    urlPattern: "URL Pattern",
     validate: "Validate",
+    valueTemplate: "Value Template",
     workflow: "Workflow",
+    workflowBuilt: "Workflow built from operation",
     workflowGraph: "Workflow Graph",
     workflowGraphNote: "Drag nodes to arrange the execution map.",
     workflowSaved: "Workflow saved",
@@ -99,11 +137,15 @@ const I18N = {
     artifacts: "产物",
     audit: "审计",
     autoLayout: "自动布局",
+    baseUrl: "基础地址",
+    buildWorkflow: "生成工作流",
     cancel: "取消",
     checkSession: "检查会话",
     context: "上下文",
     dataDir: "数据目录：{path}",
+    delete: "删除",
     definition: "定义",
+    definitionJson: "定义 JSON",
     description: "描述",
     driver: "驱动配置",
     evidence: "证据",
@@ -111,26 +153,38 @@ const I18N = {
     exportReady: "导出已准备好",
     graph: "图谱",
     import: "导入",
-    importedBundle: "已导入 {workflows} 个工作流和 {profiles} 个 Profile",
+    importedBundle: "已导入 {workflows} 个工作流、{profiles} 个 Profile 和 {registry} 套注册表",
     input: "输入",
     language: "语言",
     legendCompleted: "已完成",
     legendFailed: "失败",
     legendIdle: "空闲",
     legendRunning: "运行中",
+    actionIds: "动作 ID",
+    actionRegistry: "页面动作注册",
+    actionType: "动作类型",
+    actions: "动作",
     loginState: "登录态",
     maxPerMinute: "每分钟上限",
     mode: "模式",
     name: "名称",
     new: "新建",
     newProfile: "新建 Profile",
+    newResource: "新建资源",
     newWorkflow: "新建工作流",
     noArtifacts: "暂无产物",
     noAuditRecords: "暂无审计记录",
+    noRegistryRecords: "暂无注册资源",
     noWorkflowSelected: "未选择工作流",
     noProfile: "不使用 Profile",
     none: "无",
     operationModes: "动作执行方式",
+    operationRegistry: "业务操作注册",
+    operations: "业务操作",
+    outputName: "输出名",
+    page: "页面",
+    pageRegistry: "页面注册",
+    pages: "页面",
     platform: "平台",
     profile: "Profile",
     profileDetails: "Profile 详情",
@@ -139,6 +193,13 @@ const I18N = {
     profileSaved: "Profile 已保存",
     profiles: "Profiles",
     refresh: "刷新",
+    registry: "注册中心",
+    registryCenter: "注册中心",
+    registryCenterNote: "先注册站点、页面、页面动作和可复用业务操作，再把它们编排成工作流。",
+    deleteResourceConfirm: "确认删除这个资源吗？",
+    resourceDeleted: "资源已删除",
+    resourceIdRequired: "必须填写资源 ID",
+    resourceSaved: "资源已保存",
     retry: "重试",
     retryQueued: "重试已入队",
     runConfig: "运行配置",
@@ -147,13 +208,23 @@ const I18N = {
     runs: "运行记录",
     save: "保存",
     saveProfile: "保存 Profile",
+    saveResource: "保存资源",
+    schemaJson: "结构 JSON",
     selectedRun: "当前运行",
+    selector: "选择器",
     sessionCheckUrl: "会话检查 URL",
     sessionResult: "会话 {state}{account}",
+    site: "站点",
+    siteRegistry: "站点注册",
+    sites: "站点",
     status: "状态",
     stepCount: "{count} 步",
+    tags: "标签",
+    urlPattern: "URL 模式",
     validate: "校验",
+    valueTemplate: "值模板",
     workflow: "工作流",
+    workflowBuilt: "已从业务操作生成工作流",
     workflowGraph: "工作流图谱",
     workflowGraphNote: "拖动节点来整理执行流程。",
     workflowSaved: "工作流已保存",
@@ -174,6 +245,8 @@ const STATUS_LABELS = {
     cancel_requested: "cancel requested",
     completed: "completed",
     disabled: "disabled",
+    deprecated: "deprecated",
+    draft: "draft",
     failed: "failed",
     idle: "idle",
     "logged-out": "logged out",
@@ -192,6 +265,8 @@ const STATUS_LABELS = {
     cancel_requested: "取消中",
     completed: "已完成",
     disabled: "已禁用",
+    deprecated: "已弃用",
+    draft: "草稿",
     failed: "失败",
     idle: "空闲",
     "logged-out": "未登录",
@@ -204,10 +279,39 @@ const STATUS_LABELS = {
   }
 };
 
+const REGISTRY_SECTIONS = [
+  { id: "sites", labelKey: "sites", detailKey: "siteRegistry" },
+  { id: "pages", labelKey: "pages", detailKey: "pageRegistry" },
+  { id: "actions", labelKey: "actions", detailKey: "actionRegistry" },
+  { id: "operations", labelKey: "operations", detailKey: "operationRegistry" }
+];
+
 const elements = {
   languageSelect: document.querySelector("#languageSelect"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
   queueStatus: document.querySelector("#queueStatus"),
+  registryMetrics: document.querySelector("#registryMetrics"),
+  registrySectionTabs: document.querySelector("#registrySectionTabs"),
+  registryItemList: document.querySelector("#registryItemList"),
+  registryKindLabel: document.querySelector("#registryKindLabel"),
+  registryDetailTitle: document.querySelector("#registryDetailTitle"),
+  registryDetailStatus: document.querySelector("#registryDetailStatus"),
+  registryItemId: document.querySelector("#registryItemId"),
+  registryItemName: document.querySelector("#registryItemName"),
+  registryItemStatus: document.querySelector("#registryItemStatus"),
+  registryItemSite: document.querySelector("#registryItemSite"),
+  registryItemPage: document.querySelector("#registryItemPage"),
+  registryItemActionType: document.querySelector("#registryItemActionType"),
+  registryItemBaseUrl: document.querySelector("#registryItemBaseUrl"),
+  registryItemUrlPattern: document.querySelector("#registryItemUrlPattern"),
+  registryItemSelector: document.querySelector("#registryItemSelector"),
+  registryItemValueTemplate: document.querySelector("#registryItemValueTemplate"),
+  registryItemOutputName: document.querySelector("#registryItemOutputName"),
+  registryItemTags: document.querySelector("#registryItemTags"),
+  registryItemDescription: document.querySelector("#registryItemDescription"),
+  registryItemActionIds: document.querySelector("#registryItemActionIds"),
+  registryItemDefinitionJson: document.querySelector("#registryItemDefinitionJson"),
+  registryItemSchemaJson: document.querySelector("#registryItemSchemaJson"),
   workflowList: document.querySelector("#workflowList"),
   profileList: document.querySelector("#profileList"),
   runList: document.querySelector("#runList"),
@@ -259,6 +363,10 @@ document.querySelector("#newWorkflowButton").addEventListener("click", () => cre
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
+document.querySelector("#newRegistryItemButton").addEventListener("click", () => createBlankRegistryItem());
+document.querySelector("#saveRegistryItemButton").addEventListener("click", () => saveSelectedRegistryItem());
+document.querySelector("#deleteRegistryItemButton").addEventListener("click", () => deleteSelectedRegistryItem());
+document.querySelector("#buildWorkflowFromOperationButton").addEventListener("click", () => buildWorkflowFromSelectedOperation());
 document.querySelector("#cancelRunButton").addEventListener("click", () => cancelSelectedRun());
 document.querySelector("#retryRunButton").addEventListener("click", () => retrySelectedRun());
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -272,9 +380,10 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit()]);
+  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit()]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
+  if (!state.selectedRegistryId) selectDefaultRegistryItem();
   render();
 }
 
@@ -285,6 +394,11 @@ async function loadRuntime() {
 async function loadWorkflows() {
   const data = await api("/api/workflows");
   state.workflows = data.workflows;
+}
+
+async function loadRegistry() {
+  const data = await api("/api/registry");
+  state.registry = data.registry;
 }
 
 async function loadProfiles() {
@@ -304,6 +418,7 @@ async function loadAudit() {
 
 function render() {
   renderRuntime();
+  renderRegistry();
   renderWorkflows();
   renderProfiles();
   renderRuns();
@@ -728,6 +843,446 @@ function renderAudit() {
   }
 }
 
+function renderRegistry() {
+  if (!state.registry) return;
+  renderRegistryMetrics();
+  renderRegistrySectionTabs();
+  renderRegistryItemList();
+
+  const item = currentRegistryItem() ?? createBlankRegistryRecord(state.selectedRegistrySection);
+  syncRegistryForm(item);
+  const canBuildWorkflow = state.selectedRegistrySection === "operations" && Boolean(item.id);
+  document.querySelector("#buildWorkflowFromOperationButton").disabled = !canBuildWorkflow;
+}
+
+function renderRegistryMetrics() {
+  elements.registryMetrics.innerHTML = REGISTRY_SECTIONS.map((section) => {
+    const count = state.registry?.[section.id]?.length ?? 0;
+    return `
+      <button class="registry-metric ${state.selectedRegistrySection === section.id ? "active" : ""}" type="button" data-section="${section.id}">
+        <span>${escapeHtml(t(section.labelKey))}</span>
+        <strong>${count}</strong>
+      </button>
+    `;
+  }).join("");
+  elements.registryMetrics.querySelectorAll("[data-section]").forEach((button) => {
+    button.addEventListener("click", () => selectRegistrySection(button.dataset.section));
+  });
+}
+
+function renderRegistrySectionTabs() {
+  elements.registrySectionTabs.innerHTML = REGISTRY_SECTIONS.map((section) => `
+    <button class="registry-section-button ${state.selectedRegistrySection === section.id ? "active" : ""}" type="button" data-section="${section.id}">
+      ${escapeHtml(t(section.labelKey))}
+    </button>
+  `).join("");
+  elements.registrySectionTabs.querySelectorAll("[data-section]").forEach((button) => {
+    button.addEventListener("click", () => selectRegistrySection(button.dataset.section));
+  });
+}
+
+function renderRegistryItemList() {
+  const items = registryItemsFor(state.selectedRegistrySection);
+  elements.registryItemList.innerHTML = "";
+  if (items.length === 0) {
+    elements.registryItemList.innerHTML = `<div class="registry-empty">${escapeHtml(t("noRegistryRecords"))}</div>`;
+    return;
+  }
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `registry-item-row ${item.id === state.selectedRegistryId ? "active" : ""}`;
+    button.innerHTML = `
+      <span class="row-title">${escapeHtml(item.name)}</span>
+      <span class="row-meta">${escapeHtml(item.id)} · ${escapeHtml(statusLabel(item.status))}${item.tags?.length ? ` · ${escapeHtml(item.tags.join(", "))}` : ""}</span>
+    `;
+    button.addEventListener("click", () => selectRegistryItem(state.selectedRegistrySection, item.id));
+    elements.registryItemList.append(button);
+  }
+}
+
+function syncRegistryForm(item) {
+  const formKey = `${state.selectedRegistrySection}:${state.selectedRegistryId ?? "__draft__"}`;
+  populateRegistrySelects(item);
+  setRegistryFieldState(state.selectedRegistrySection);
+  if (state.registryFormKey === formKey) {
+    updateRegistryDetailChrome(item);
+    return;
+  }
+  fillRegistryForm(item);
+  state.registryFormKey = formKey;
+}
+
+function fillRegistryForm(item) {
+  updateRegistryDetailChrome(item);
+  elements.registryItemId.value = item.id ?? "";
+  elements.registryItemName.value = item.name ?? "";
+  elements.registryItemStatus.value = item.status ?? "draft";
+  elements.registryItemDescription.value = item.description ?? "";
+  elements.registryItemTags.value = Array.isArray(item.tags) ? item.tags.join(", ") : "";
+  elements.registryItemSite.value = item.siteId ?? item.id ?? "";
+  elements.registryItemPage.value = item.pageId ?? "";
+  elements.registryItemActionType.value = item.actionType ?? "click";
+  elements.registryItemBaseUrl.value = item.baseUrl ?? "";
+  elements.registryItemUrlPattern.value = item.urlPattern ?? "";
+  elements.registryItemSelector.value = item.selector ?? item.stateSelector ?? "";
+  elements.registryItemValueTemplate.value = item.valueTemplate ?? "";
+  elements.registryItemOutputName.value = item.outputName ?? "";
+  elements.registryItemActionIds.value = Array.isArray(item.actionIds) ? item.actionIds.join("\n") : "";
+  elements.registryItemDefinitionJson.value = formatJson(item.definition ?? {});
+  elements.registryItemSchemaJson.value = formatJson({
+    inputSchema: item.inputSchema ?? {},
+    outputSchema: item.outputSchema ?? {},
+    workflowTemplate: item.workflowTemplate ?? null
+  });
+}
+
+function updateRegistryDetailChrome(item) {
+  const section = REGISTRY_SECTIONS.find((entry) => entry.id === state.selectedRegistrySection) ?? REGISTRY_SECTIONS[0];
+  elements.registryKindLabel.textContent = t(section.detailKey);
+  elements.registryDetailTitle.textContent = item?.name || t("newResource");
+  elements.registryDetailStatus.textContent = statusLabel(item?.status ?? "draft");
+  elements.registryDetailStatus.className = `pill ${statusClass(item?.status ?? "draft")}`;
+}
+
+function setRegistryFieldState(section) {
+  const enables = {
+    sites: ["registryItemBaseUrl"],
+    pages: ["registryItemSite", "registryItemUrlPattern", "registryItemSelector"],
+    actions: ["registryItemSite", "registryItemPage", "registryItemActionType", "registryItemSelector", "registryItemValueTemplate", "registryItemOutputName"],
+    operations: ["registryItemSite", "registryItemActionIds", "registryItemSchemaJson"]
+  }[section] ?? [];
+  const optionalIds = [
+    "registryItemSite",
+    "registryItemPage",
+    "registryItemActionType",
+    "registryItemBaseUrl",
+    "registryItemUrlPattern",
+    "registryItemSelector",
+    "registryItemValueTemplate",
+    "registryItemOutputName",
+    "registryItemActionIds",
+    "registryItemSchemaJson"
+  ];
+  for (const id of optionalIds) {
+    elements[id].disabled = !enables.includes(id);
+  }
+}
+
+function populateRegistrySelects(item = {}) {
+  const selectedSite = item.siteId ?? elements.registryItemSite.value;
+  const selectedPage = item.pageId ?? elements.registryItemPage.value;
+  elements.registryItemSite.innerHTML = `<option value="">${escapeHtml(t("none"))}</option>${registryItemsFor("sites")
+    .map((site) => `<option value="${escapeHtml(site.id)}">${escapeHtml(site.name)}</option>`)
+    .join("")}`;
+  elements.registryItemPage.innerHTML = `<option value="">${escapeHtml(t("none"))}</option>${registryItemsFor("pages")
+    .map((page) => `<option value="${escapeHtml(page.id)}">${escapeHtml(page.name)}${page.siteId ? ` / ${escapeHtml(page.siteId)}` : ""}</option>`)
+    .join("")}`;
+  if ([...elements.registryItemSite.options].some((option) => option.value === selectedSite)) {
+    elements.registryItemSite.value = selectedSite;
+  }
+  if ([...elements.registryItemPage.options].some((option) => option.value === selectedPage)) {
+    elements.registryItemPage.value = selectedPage;
+  }
+}
+
+function selectRegistrySection(section) {
+  if (!REGISTRY_SECTIONS.some((entry) => entry.id === section)) return;
+  state.selectedRegistrySection = section;
+  state.selectedRegistryDraft = null;
+  state.registryFormKey = null;
+  const first = registryItemsFor(section)[0];
+  state.selectedRegistryId = first?.id ?? null;
+  renderRegistry();
+}
+
+function selectRegistryItem(section, id) {
+  state.selectedRegistrySection = section;
+  state.selectedRegistryId = id;
+  state.selectedRegistryDraft = null;
+  state.registryFormKey = null;
+  renderRegistry();
+}
+
+function selectDefaultRegistryItem() {
+  if (!state.registry) return;
+  const section = REGISTRY_SECTIONS.some((entry) => entry.id === state.selectedRegistrySection)
+    ? state.selectedRegistrySection
+    : "sites";
+  state.selectedRegistrySection = section;
+  const items = registryItemsFor(section);
+  state.selectedRegistryId = items.some((item) => item.id === state.selectedRegistryId)
+    ? state.selectedRegistryId
+    : items[0]?.id ?? null;
+}
+
+function createBlankRegistryItem() {
+  state.selectedRegistryDraft = createBlankRegistryRecord(state.selectedRegistrySection);
+  state.selectedRegistryId = null;
+  state.registryFormKey = null;
+  renderRegistry();
+}
+
+function createBlankRegistryRecord(section) {
+  const suffix = Date.now().toString(36);
+  const firstSite = registryItemsFor("sites")[0];
+  const firstPage = registryItemsFor("pages")[0];
+  const base = {
+    id: `${section.slice(0, -1) || "registry"}-${suffix}`,
+    name: t("newResource"),
+    description: "",
+    status: "draft",
+    tags: [],
+    definition: {}
+  };
+  if (section === "sites") {
+    return { ...base, baseUrl: "", authMode: "profile", profileStrategy: "one-profile-per-account" };
+  }
+  if (section === "pages") {
+    return { ...base, siteId: firstSite?.id ?? "", urlPattern: "", stateSelector: "", accountSelector: "" };
+  }
+  if (section === "actions") {
+    return { ...base, siteId: firstSite?.id ?? "", pageId: firstPage?.id ?? "", actionType: "click", selector: "", valueTemplate: "", outputName: "" };
+  }
+  return { ...base, siteId: firstSite?.id ?? "", actionIds: [], inputSchema: {}, outputSchema: {}, workflowTemplate: null };
+}
+
+async function saveSelectedRegistryItem() {
+  try {
+    const section = state.selectedRegistrySection;
+    const body = registryItemFromForm(section);
+    if (!body.id) throw new Error(t("resourceIdRequired"));
+    const exists = registryItemsFor(section).some((item) => item.id === body.id);
+    const data = await api(exists ? `/api/registry/${section}/${encodeURIComponent(body.id)}` : `/api/registry/${section}`, {
+      method: exists ? "PUT" : "POST",
+      body
+    });
+    state.registry = data.registry;
+    state.selectedRegistryId = data.item.id;
+    state.selectedRegistryDraft = null;
+    state.registryFormKey = null;
+    await loadAudit();
+    render();
+    showToast(t("resourceSaved"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function deleteSelectedRegistryItem() {
+  if (!state.selectedRegistryId) return;
+  if (!window.confirm(t("deleteResourceConfirm"))) return;
+  try {
+    const section = state.selectedRegistrySection;
+    const data = await api(`/api/registry/${section}/${encodeURIComponent(state.selectedRegistryId)}`, { method: "DELETE" });
+    state.registry = data.registry;
+    state.selectedRegistryId = registryItemsFor(section)[0]?.id ?? null;
+    state.selectedRegistryDraft = null;
+    state.registryFormKey = null;
+    await loadAudit();
+    render();
+    showToast(t("resourceDeleted"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function buildWorkflowFromSelectedOperation() {
+  try {
+    if (state.selectedRegistrySection !== "operations") return;
+    const operation = registryItemFromForm("operations");
+    if (!operation.id) throw new Error(t("resourceIdRequired"));
+    const workflowRecord = createWorkflowRecordFromOperation(operation);
+    const data = await api("/api/workflows", { method: "POST", body: workflowRecord });
+    await Promise.all([loadWorkflows(), loadAudit()]);
+    state.selectedWorkflowId = data.workflow.id;
+    selectWorkflow(data.workflow.id);
+    selectTab("graph");
+    render();
+    showToast(t("workflowBuilt"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function registryItemFromForm(section) {
+  const existing = currentRegistryItem() ?? createBlankRegistryRecord(section);
+  const base = {
+    ...existing,
+    id: elements.registryItemId.value.trim(),
+    name: elements.registryItemName.value.trim() || elements.registryItemId.value.trim(),
+    description: elements.registryItemDescription.value.trim(),
+    status: elements.registryItemStatus.value,
+    tags: parseList(elements.registryItemTags.value),
+    definition: parseJson(elements.registryItemDefinitionJson.value, "Definition")
+  };
+  if (section === "sites") {
+    return {
+      ...base,
+      baseUrl: elements.registryItemBaseUrl.value.trim(),
+      authMode: existing.authMode ?? "profile",
+      profileStrategy: existing.profileStrategy ?? "one-profile-per-account"
+    };
+  }
+  if (section === "pages") {
+    return {
+      ...base,
+      siteId: elements.registryItemSite.value,
+      urlPattern: elements.registryItemUrlPattern.value.trim(),
+      stateSelector: elements.registryItemSelector.value.trim(),
+      accountSelector: existing.accountSelector ?? ""
+    };
+  }
+  if (section === "actions") {
+    return {
+      ...base,
+      siteId: elements.registryItemSite.value,
+      pageId: elements.registryItemPage.value,
+      actionType: elements.registryItemActionType.value,
+      selector: elements.registryItemSelector.value.trim(),
+      valueTemplate: elements.registryItemValueTemplate.value.trim(),
+      outputName: elements.registryItemOutputName.value.trim()
+    };
+  }
+  const schemas = parseJson(elements.registryItemSchemaJson.value, "Schema");
+  return {
+    ...base,
+    siteId: elements.registryItemSite.value,
+    actionIds: parseList(elements.registryItemActionIds.value),
+    inputSchema: schemas.inputSchema ?? {},
+    outputSchema: schemas.outputSchema ?? {},
+    workflowTemplate: schemas.workflowTemplate ?? null
+  };
+}
+
+function currentRegistryItem() {
+  if (state.selectedRegistryDraft) return state.selectedRegistryDraft;
+  return registryItemsFor(state.selectedRegistrySection).find((item) => item.id === state.selectedRegistryId) ?? null;
+}
+
+function registryItemsFor(section) {
+  return Array.isArray(state.registry?.[section]) ? state.registry[section] : [];
+}
+
+function createWorkflowRecordFromOperation(operation) {
+  const workflow = operation.workflowTemplate
+    ? structuredCloneSafe(operation.workflowTemplate)
+    : createWorkflowDefinitionFromOperation(operation);
+  workflow.name = workflow.name || slugify(operation.name || operation.id);
+  workflow.version = workflow.version || "0.1.0";
+  const baseId = `${slugify(operation.id)}-workflow`;
+  const id = state.workflows.some((item) => item.id === baseId) ? `${baseId}-${Date.now().toString(36)}` : baseId;
+  return {
+    id,
+    name: operation.name,
+    description: operation.description,
+    workflow,
+    defaultRun: {
+      mode: "dry-run",
+      profileId: state.profiles.some((profile) => profile.id === "dry-run-demo") ? "dry-run-demo" : null,
+      input: sampleInputFromSchema(operation.inputSchema),
+      context: {
+        operationModes: detectOperationModes(workflow)
+      },
+      driverConfig: createDriverConfigFromOperation(operation)
+    }
+  };
+}
+
+function createWorkflowDefinitionFromOperation(operation) {
+  const stepId = templateSafeId(operation.id);
+  const actions = operation.actionIds
+    .map((id) => registryItemsFor("actions").find((action) => action.id === id))
+    .filter(Boolean);
+  const browserSteps = actions
+    .filter((action) => action.actionType !== "apiCall")
+    .map((action) => actionToWorkflowStep(action));
+  const apiAction = actions.find((action) => action.actionType === "apiCall");
+  const api = createApiStepFromOperation(operation, apiAction);
+  return {
+    name: slugify(operation.name || operation.id),
+    version: "0.1.0",
+    defaults: { timeoutMs: 5000, screenshot: "on-failure" },
+    steps: [
+      {
+        id: stepId,
+        action: "operation",
+        mode: `{{context.operationModes.${stepId}}}`,
+        browserSteps: browserSteps.length ? browserSteps : [{ id: `${slugify(operation.id)}.checkpoint`, action: "checkpoint", label: operation.name }],
+        api
+      }
+    ]
+  };
+}
+
+function actionToWorkflowStep(action) {
+  const explicitStep = action.definition?.step;
+  if (explicitStep && typeof explicitStep === "object") {
+    return { id: slugify(action.id), ...structuredCloneSafe(explicitStep) };
+  }
+  const id = slugify(action.id);
+  if (action.actionType === "goto") return { id, action: "goto", url: action.valueTemplate || pageUrlForAction(action) };
+  if (action.actionType === "fill") return { id, action: "fill", selector: action.selector, value: action.valueTemplate };
+  if (action.actionType === "waitFor") return { id, action: "waitFor", selector: action.selector };
+  if (action.actionType === "press") return { id, action: "press", selector: action.selector || null, key: action.valueTemplate || "Enter" };
+  if (action.actionType === "extract") return { id, action: "extract", selector: action.selector, name: action.outputName || id };
+  if (action.actionType === "screenshot") return { id, action: "screenshot", name: action.outputName || id };
+  if (action.actionType === "approval") return { id, action: "approval", name: action.outputName || id, prompt: action.description || action.name };
+  return { id, action: "click", selector: action.selector };
+}
+
+function createApiStepFromOperation(operation, apiAction) {
+  const branch = operation.definition?.apiBranch;
+  if (branch && typeof branch === "object") {
+    return { id: `${slugify(operation.id)}.api`, action: "apiCall", method: "GET", ...structuredCloneSafe(branch) };
+  }
+  if (!apiAction) return null;
+  const explicitStep = apiAction.definition?.step;
+  if (explicitStep && typeof explicitStep === "object") {
+    return { id: `${slugify(operation.id)}.api`, action: "apiCall", ...structuredCloneSafe(explicitStep) };
+  }
+  return {
+    id: `${slugify(operation.id)}.api`,
+    action: "apiCall",
+    method: "GET",
+    url: apiAction.valueTemplate || apiAction.selector
+  };
+}
+
+function createDriverConfigFromOperation(operation) {
+  const selectors = {};
+  for (const actionId of operation.actionIds ?? []) {
+    const action = registryItemsFor("actions").find((item) => item.id === actionId);
+    if (!action?.selector) continue;
+    selectors[action.selector] = action.actionType === "extract" || action.actionType === "waitFor"
+      ? { text: action.outputName ? `Sample ${action.outputName}` : action.name }
+      : { value: "" };
+  }
+  const site = registryItemsFor("sites").find((item) => item.id === operation.siteId);
+  const page = registryItemsFor("pages").find((item) => item.siteId === operation.siteId) ?? registryItemsFor("pages")[0];
+  const pageUrl = page?.urlPattern || site?.baseUrl || "https://example.local";
+  return {
+    pages: {
+      [pageUrl]: { selectors }
+    }
+  };
+}
+
+function pageUrlForAction(action) {
+  const page = registryItemsFor("pages").find((item) => item.id === action.pageId);
+  const site = registryItemsFor("sites").find((item) => item.id === action.siteId);
+  return action.valueTemplate || page?.urlPattern || site?.baseUrl || "https://example.local";
+}
+
+function sampleInputFromSchema(schema = {}) {
+  return Object.fromEntries(Object.entries(schema).map(([key, field]) => {
+    if (field && typeof field === "object" && "default" in field) return [key, field.default];
+    if (field?.type === "number" || field?.type === "integer") return [key, 0];
+    if (field?.type === "boolean") return [key, true];
+    return [key, `sample ${key}`];
+  }));
+}
+
 async function saveSelectedWorkflow() {
   try {
     const id = elements.workflowId.value.trim();
@@ -901,7 +1456,8 @@ async function importBundle(file) {
     await refreshAll();
     showToast(t("importedBundle", {
       workflows: result.imported.workflows,
-      profiles: result.imported.profiles
+      profiles: result.imported.profiles,
+      registry: result.imported.registry ?? 0
     }));
   } catch (error) {
     showToast(error.message);
@@ -978,7 +1534,7 @@ function startPolling() {
   state.polling = setInterval(async () => {
     const hasActive = state.runs.some((run) => ["queued", "running"].includes(run.status));
     if (!hasActive && !state.selectedRunId) return;
-    await Promise.all([loadRuntime(), loadRuns(), loadProfiles(), loadAudit()]);
+    await Promise.all([loadRuntime(), loadRegistry(), loadRuns(), loadProfiles(), loadAudit()]);
     render();
     if (state.selectedRunId) await selectRun(state.selectedRunId);
   }, 1500);
@@ -1016,6 +1572,7 @@ function applyStaticTranslations() {
   elements.languageSelect.setAttribute("aria-label", t("language"));
   translateStatusOptions(elements.profileLoginState);
   translateStatusOptions(elements.profileStatus);
+  translateStatusOptions(elements.registryItemStatus);
 }
 
 function translateStatusOptions(select) {
@@ -1113,6 +1670,34 @@ function formatBytes(value) {
 function shorten(value, max = 42) {
   const text = String(value ?? "");
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function parseList(value) {
+  return String(value ?? "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function slugify(value) {
+  const text = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return text || `item-${Date.now().toString(36)}`;
+}
+
+function templateSafeId(value) {
+  const text = String(value ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return /^[a-zA-Z_]/.test(text) ? text : `operation_${text || Date.now().toString(36)}`;
+}
+
+function structuredCloneSafe(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
 function cssEscape(value) {

@@ -18,11 +18,40 @@ Returns recent audit records.
 
 ### `GET /api/export`
 
-Exports workflows, profiles, and recent run metadata.
+Exports the registry, workflows, profiles, and recent run metadata.
 
 ### `POST /api/import`
 
-Imports workflows and profiles from an exported bundle.
+Imports the registry, workflows, and profiles from an exported bundle.
+
+## Registry
+
+The registry is the generic authoring model behind the Studio UI:
+
+- `sites`: platform or tenant-level targets.
+- `pages`: page patterns under a site.
+- `actions`: reusable browser/API page actions.
+- `operations`: business-level capabilities that compose actions and can become workflows.
+
+### `GET /api/registry`
+
+Fetches the full registry.
+
+### `PUT /api/registry`
+
+Replaces the full registry.
+
+### `POST /api/registry/:section`
+
+Creates or upserts one registry item in `sites`, `pages`, `actions`, or `operations`.
+
+### `PUT /api/registry/:section/:id`
+
+Updates one registry item.
+
+### `DELETE /api/registry/:section/:id`
+
+Deletes one registry item.
 
 ## Workflows
 
