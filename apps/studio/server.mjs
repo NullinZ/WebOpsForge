@@ -420,3 +420,12 @@ function contentType(filePath) {
   if (ext === ".txt") return "text/plain; charset=utf-8";
   return "application/octet-stream";
 }
+
+function summarizeRegistry(registry) {
+  return {
+    sites: registry.sites?.length ?? 0,
+    pages: registry.pages?.length ?? 0,
+    actions: registry.actions?.length ?? 0,
+    operations: registry.operations?.length ?? 0
+  };
+}
