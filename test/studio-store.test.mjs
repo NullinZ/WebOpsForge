@@ -40,6 +40,9 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     await store.init();
     const profiles = await store.listProfiles();
     assert.ok(profiles.some((profile) => profile.id === "dry-run-demo"));
+    const seededRegistry = await store.getRegistry();
+    assert.ok(seededRegistry.sites.some((site) => site.id === "example-marketplace"));
+    assert.ok(seededRegistry.operations.some((operation) => operation.id === "example-search-suppliers"));
 
     const profile = await store.saveProfile({
       id: "operator-01",
@@ -64,6 +67,15 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     assert.equal(session.loginState, "authenticated");
     assert.equal(session.accountLabel, "operator@example");
 
+    const savedRegistryItem = await store.saveRegistryItem("sites", {
+      id: "custom-site",
+      name: "Custom Site",
+      baseUrl: "https://custom.example",
+      status: "ready"
+    });
+    assert.equal(savedRegistryItem.item.name, "Custom Site");
+    assert.ok(savedRegistryItem.registry.sites.some((site) => site.id === "custom-site"));
+
     const workflow = (await store.listWorkflows())[0];
     const run = await store.createRun({
       workflowId: workflow.id,
@@ -82,10 +94,12 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     const bundle = await store.exportBundle();
     assert.ok(bundle.workflows.length > 0);
     assert.ok(bundle.profiles.some((item) => item.id === "operator-01"));
+    assert.ok(bundle.registry.sites.some((site) => site.id === "custom-site"));
 
     const imported = await store.importBundle(bundle);
     assert.equal(imported.imported.workflows, bundle.workflows.length);
     assert.equal(imported.imported.profiles, bundle.profiles.length);
+    assert.equal(imported.imported.registry, 1);
 
     const audit = await store.listAudit();
     assert.ok(audit.some((item) => item.type === "run.cancel_requested"));
