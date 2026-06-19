@@ -2,6 +2,12 @@
 
 本项目沿用 `/Users/nullin/GitHub/AGENTS.md` 中可跨项目复用的工程规范。执行时先判断适用边界：通用工程纪律默认适用；AHouse 专属服务、端口、角色、FileService 规则只在本项目实际接入对应链路时适用。
 
+## 语音识别 / 语音转文字能力
+
+- 任何涉及语音识别、语音转文字、音频转文字、视频转文稿、ASR、transcription 的需求，先检查当前工程是否已有自有 ASR 服务；已有则优先使用当前工程自有服务，没有时才使用 AHProjectMgr 已封装的公共 ASR 服务，先阅读 `/Users/nullin/GitHub/docs/shared-capabilities/asr-service-playbook.md`。
+- 不要重新安装本地 Whisper/MLX/FunASR 模型，除非用户明确要求离线本地处理。
+- 新工程只在后端服务侧调用 `http://127.0.0.1:9999/api/v1/asr`，service key 只能来自服务端私有环境或 AHProjectMgr `.env.local`，禁止写入仓库、文档、URL、日志或前端代码。
+
 ## 待办与后续登记
 
 - 遇到待开发、临时方案、遗留问题、P1/P2 后续项或需要产品/技术确认的事项，不要只写代码 `TODO`。

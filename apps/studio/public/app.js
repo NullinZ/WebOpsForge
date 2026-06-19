@@ -16,8 +16,212 @@ const state = {
   language: localStorage.getItem("webops-forge-language") || "en",
   graphPositions: {},
   graphDrag: null,
+  graphPan: null,
+  graphGesture: null,
+  graphSize: null,
+  graphZoom: Number(localStorage.getItem("webops-forge-graph-zoom") || "1") || 1,
+  graphLayout: localStorage.getItem("webops-forge-graph-layout") || "sequence",
+  graphViewportCenterKey: null,
+  selectedGraphNodeId: null,
+  nodeEditorSyncing: false,
+  resizeDrag: null,
   polling: null
 };
+
+const GRAPH_CANVAS_SCALE = 10;
+const GRAPH_LAYOUT_VERSION = "v3";
+const GRAPH_MIN_ZOOM = 0.2;
+const GRAPH_MAX_ZOOM = 2.5;
+const GRAPH_WHEEL_ZOOM_SENSITIVITY = 0.0015;
+const GRAPH_NODE_WIDTH = 220;
+const GRAPH_NODE_HEIGHT = 92;
+const GRAPH_CHILD_NODE_WIDTH = 210;
+const GRAPH_MIN_CONTENT_WIDTH = 780;
+const GRAPH_MIN_CONTENT_HEIGHT = 420;
+const GRAPH_CANVAS_MARGIN = 160;
+const GRAPH_LAYOUT_CONFIGS = {
+  sequence: {
+    groupMinWidth: 520,
+    groupGap: 260,
+    groupPadding: 160,
+    childColumns: "all",
+    childColumnStep: 360,
+    childRowStep: 170,
+    mainToBranchY: 240
+  },
+  grouped: {
+    groupMinWidth: 620,
+    groupGap: 280,
+    groupPadding: 160,
+    childColumns: "balanced",
+    childColumnStep: 380,
+    childRowStep: 190,
+    mainToBranchY: 240
+  },
+  compact: {
+    groupMinWidth: 460,
+    groupGap: 170,
+    groupPadding: 100,
+    childColumns: "balanced",
+    childColumnStep: 285,
+    childRowStep: 145,
+    mainToBranchY: 180
+  }
+};
+const NODE_EDITOR_FIELDS = [
+  {
+    element: "nodeEditorId",
+    read: (step) => step.id ?? "",
+    write: (step, value) => {
+      const nextId = value.trim();
+      if (nextId) step.id = nextId;
+    }
+  },
+  {
+    element: "nodeEditorAction",
+    read: (step) => step.action ?? "checkpoint",
+    write: (step, value) => {
+      const nextAction = value.trim();
+      if (nextAction) step.action = nextAction;
+    }
+  },
+  {
+    element: "nodeEditorName",
+    read: (step) => step.name ?? step.label ?? "",
+    write: (step, value) => writeAliasField(step, ["name", "label"], value)
+  },
+  { element: "nodeEditorSelector", field: "selector" },
+  { element: "nodeEditorUrl", field: "url" },
+  { element: "nodeEditorValue", field: "value", parseJsonLike: true },
+  { element: "nodeEditorKey", field: "key" },
+  { element: "nodeEditorIncludes", field: "includes" },
+  { element: "nodeEditorMethod", field: "method" },
+  { element: "nodeEditorExtract", field: "extract" }
+];
+const RESIZE_STORAGE_PREFIX = "webops-forge-resize";
+const RESIZE_STEP = 24;
+const resizableLayouts = new Map();
+const RESIZABLE_LAYOUTS = [
+  {
+    id: "workspace",
+    root: ".workspace",
+    panes: {
+      sidebar: {
+        selector: ":scope > .sidebar",
+        variable: "--workspace-sidebar-size",
+        defaultSize: 280,
+        minSize: 150,
+        collapseAt: 96,
+        label: "Workflows"
+      },
+      inspector: {
+        selector: ":scope > .inspector",
+        variable: "--workspace-inspector-size",
+        defaultSize: 360,
+        minSize: 220,
+        collapseAt: 120,
+        label: "Runs"
+      }
+    },
+    handles: [
+      {
+        before: ":scope > .sidebar",
+        controls: "sidebar",
+        direction: 1,
+        axis: () => window.matchMedia("(max-width: 760px)").matches ? "y" : "x"
+      },
+      {
+        before: ":scope > .editor-pane",
+        controls: "inspector",
+        direction: -1,
+        axis: () => window.matchMedia("(max-width: 1120px)").matches ? "y" : "x"
+      }
+    ]
+  },
+  {
+    id: "graph",
+    root: "#graphPanel",
+    panes: {
+      nodeEditor: {
+        selector: ":scope > #graphNodeEditor",
+        variable: "--graph-node-editor-size",
+        defaultSize: 360,
+        minSize: 220,
+        collapseAt: 130,
+        label: "Node Editor"
+      }
+    },
+    handles: [
+      {
+        before: ":scope > #workflowGraph",
+        controls: "nodeEditor",
+        direction: -1,
+        axis: () => window.matchMedia("(max-width: 1120px)").matches ? "y" : "x"
+      }
+    ]
+  },
+  {
+    id: "registry",
+    root: ".registry-workbench",
+    panes: {
+      navigation: {
+        selector: ":scope > .registry-navigation",
+        variable: "--registry-navigation-size",
+        defaultSize: 300,
+        minSize: 180,
+        collapseAt: 110,
+        label: "Registry List"
+      }
+    },
+    handles: [
+      {
+        before: ":scope > .registry-navigation",
+        controls: "navigation",
+        direction: 1,
+        axis: "x"
+      }
+    ]
+  },
+  {
+    id: "runEditors",
+    root: ".triple-editors",
+    panes: {
+      input: {
+        selector: ':scope > [data-run-pane="input"]',
+        variable: "--run-input-size",
+        defaultSize: 260,
+        minSize: 170,
+        collapseAt: 96,
+        label: "Input"
+      },
+      driver: {
+        selector: ':scope > [data-run-pane="driver"]',
+        variable: "--run-driver-size",
+        defaultSize: 260,
+        minSize: 170,
+        collapseAt: 96,
+        label: "Driver"
+      }
+    },
+    handles: [
+      {
+        before: ':scope > [data-run-pane="input"]',
+        controls: "input",
+        direction: 1,
+        axis: "x"
+      },
+      {
+        before: ':scope > [data-run-pane="context"]',
+        controls: "driver",
+        direction: -1,
+        axis: "x"
+      }
+    ]
+  }
+];
+
+state.graphZoom = normalizeGraphZoom(state.graphZoom);
+state.graphLayout = normalizeGraphLayout(state.graphLayout);
 
 const I18N = {
   en: {
@@ -44,11 +248,18 @@ const I18N = {
     evidence: "Evidence",
     export: "Export",
     exportReady: "Export ready",
+    extract: "Extract",
     graph: "Graph",
+    id: "ID",
     import: "Import",
     importedBundle: "Imported {workflows} workflows, {profiles} profiles, and {registry} registry set",
+    includes: "Includes",
     input: "Input",
+    key: "Key",
     language: "Language",
+    layoutCompact: "Compact",
+    layoutGrouped: "Grouped",
+    layoutSequence: "Sequence",
     legendCompleted: "completed",
     legendFailed: "failed",
     legendIdle: "idle",
@@ -59,9 +270,15 @@ const I18N = {
     actions: "Actions",
     loginState: "Login State",
     maxPerMinute: "Max Per Minute",
+    method: "Method",
     mode: "Mode",
     name: "Name",
     new: "New",
+    nodeEditor: "Node Editor",
+    nodeEditorApi: "API branch",
+    nodeEditorBrowser: "Browser step",
+    nodeEditorEmpty: "No node selected",
+    nodeEditorMain: "Main step",
     newProfile: "New Profile",
     newResource: "New Resource",
     newWorkflow: "New Workflow",
@@ -151,11 +368,18 @@ const I18N = {
     evidence: "证据",
     export: "导出",
     exportReady: "导出已准备好",
+    extract: "提取路径",
     graph: "图谱",
+    id: "ID",
     import: "导入",
     importedBundle: "已导入 {workflows} 个工作流、{profiles} 个 Profile 和 {registry} 套注册表",
+    includes: "包含文本",
     input: "输入",
+    key: "按键",
     language: "语言",
+    layoutCompact: "紧凑",
+    layoutGrouped: "分组",
+    layoutSequence: "顺序",
     legendCompleted: "已完成",
     legendFailed: "失败",
     legendIdle: "空闲",
@@ -166,9 +390,15 @@ const I18N = {
     actions: "动作",
     loginState: "登录态",
     maxPerMinute: "每分钟上限",
+    method: "请求方法",
     mode: "模式",
     name: "名称",
     new: "新建",
+    nodeEditor: "节点编辑",
+    nodeEditorApi: "API 分支",
+    nodeEditorBrowser: "浏览器步骤",
+    nodeEditorEmpty: "未选择节点",
+    nodeEditorMain: "主流程步骤",
     newProfile: "新建 Profile",
     newResource: "新建资源",
     newWorkflow: "新建工作流",
@@ -319,8 +549,26 @@ const elements = {
   workflowId: document.querySelector("#workflowId"),
   workflowDescription: document.querySelector("#workflowDescription"),
   workflowGraph: document.querySelector("#workflowGraph"),
+  graphCanvas: document.querySelector("#graphCanvas"),
   graphEdges: document.querySelector("#graphEdges"),
   graphNodeLayer: document.querySelector("#graphNodeLayer"),
+  graphZoomLevel: document.querySelector("#graphZoomLevel"),
+  graphLayoutButtons: document.querySelectorAll("[data-graph-layout]"),
+  graphNodeEditor: document.querySelector("#graphNodeEditor"),
+  nodeEditorKind: document.querySelector("#nodeEditorKind"),
+  nodeEditorEmpty: document.querySelector("#nodeEditorEmpty"),
+  nodeEditorForm: document.querySelector("#nodeEditorForm"),
+  nodeEditorId: document.querySelector("#nodeEditorId"),
+  nodeEditorAction: document.querySelector("#nodeEditorAction"),
+  nodeEditorName: document.querySelector("#nodeEditorName"),
+  nodeEditorSelector: document.querySelector("#nodeEditorSelector"),
+  nodeEditorUrl: document.querySelector("#nodeEditorUrl"),
+  nodeEditorValue: document.querySelector("#nodeEditorValue"),
+  nodeEditorKey: document.querySelector("#nodeEditorKey"),
+  nodeEditorIncludes: document.querySelector("#nodeEditorIncludes"),
+  nodeEditorMethod: document.querySelector("#nodeEditorMethod"),
+  nodeEditorExtract: document.querySelector("#nodeEditorExtract"),
+  nodeEditorJson: document.querySelector("#nodeEditorJson"),
   workflowJson: document.querySelector("#workflowJson"),
   runMode: document.querySelector("#runMode"),
   profileSelect: document.querySelector("#profileSelect"),
@@ -349,8 +597,11 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+setupResizableLayouts();
+
 elements.languageToggle.addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
 document.querySelector("#autoLayoutButton").addEventListener("click", () => autoLayoutSelectedWorkflow());
+document.querySelector("#saveGraphWorkflowButton").addEventListener("click", () => saveSelectedWorkflow());
 document.querySelector("#refreshButton").addEventListener("click", () => refreshAll());
 document.querySelector("#exportButton").addEventListener("click", () => exportBundle());
 document.querySelector("#importButton").addEventListener("click", () => elements.importFile.click());
@@ -371,8 +622,40 @@ document.querySelector("#retryRunButton").addEventListener("click", () => retryS
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 });
-document.addEventListener("pointermove", (event) => moveGraphNode(event));
-document.addEventListener("pointerup", () => endGraphDrag());
+elements.graphLayoutButtons.forEach((button) => {
+  button.addEventListener("click", () => setGraphLayout(button.dataset.graphLayout));
+});
+NODE_EDITOR_FIELDS.forEach(({ element }) => {
+  const control = elements[element];
+  control.addEventListener("input", () => updateSelectedGraphNodeFromFields());
+  control.addEventListener("change", () => updateSelectedGraphNodeFromFields());
+});
+elements.nodeEditorJson.addEventListener("input", () => updateSelectedGraphNodeFromJson());
+elements.workflowJson.addEventListener("input", () => syncWorkflowJsonToGraph());
+elements.workflowGraph.addEventListener("pointerdown", (event) => startGraphPan(event));
+elements.workflowGraph.addEventListener("mousedown", (event) => startGraphPan(event));
+elements.workflowGraph.addEventListener("wheel", (event) => handleGraphWheel(event), { passive: false });
+elements.workflowGraph.addEventListener("gesturestart", (event) => startGraphGesture(event));
+elements.workflowGraph.addEventListener("gesturechange", (event) => moveGraphGesture(event));
+elements.workflowGraph.addEventListener("gestureend", () => endGraphGesture());
+document.addEventListener("pointermove", (event) => {
+  movePanelResize(event);
+  if (state.resizeDrag) return;
+  moveGraphNode(event);
+  moveGraphPan(event);
+});
+document.addEventListener("mousemove", (event) => moveGraphPan(event));
+document.addEventListener("pointerup", () => {
+  endPanelResize();
+  endGraphInteraction();
+});
+document.addEventListener("pointercancel", () => {
+  endPanelResize();
+  endGraphInteraction();
+});
+document.addEventListener("mouseup", () => endGraphPan());
+updateGraphLayoutButtons();
+updateGraphZoomLabel();
 
 applyStaticTranslations();
 await refreshAll();
@@ -495,15 +778,264 @@ function renderRuns() {
   }
 }
 
+function setupResizableLayouts() {
+  for (const config of RESIZABLE_LAYOUTS) {
+    const root = document.querySelector(config.root);
+    if (!root) continue;
+    const runtime = {
+      config,
+      root,
+      panes: hydrateResizablePanes(config),
+      handles: []
+    };
+    root.dataset.resizeLayout = config.id;
+    resizableLayouts.set(config.id, runtime);
+
+    for (const [paneId, paneConfig] of Object.entries(config.panes)) {
+      const pane = root.querySelector(paneConfig.selector);
+      pane?.classList.add("resizable-pane");
+      applyResizablePane(runtime, paneId);
+    }
+
+    config.handles.forEach((handleConfig, index) => {
+      const before = root.querySelector(handleConfig.before);
+      if (!before) return;
+      const handle = document.createElement("div");
+      handle.className = "resize-handle";
+      handle.dataset.resizeLayout = config.id;
+      handle.dataset.handleIndex = String(index);
+      handle.role = "separator";
+      handle.tabIndex = 0;
+      handle.title = `${config.panes[handleConfig.controls].label}: drag to resize, double-click to collapse or restore`;
+      handle.addEventListener("pointerdown", (event) => startPanelResize(event, config.id, index));
+      handle.addEventListener("dblclick", () => toggleResizablePane(config.id, handleConfig.controls));
+      handle.addEventListener("keydown", (event) => handleResizeKey(event, config.id, index));
+      before.after(handle);
+      runtime.handles.push({ element: handle, config: handleConfig });
+      updateResizeHandle(runtime, index);
+    });
+  }
+
+  window.addEventListener("resize", updateAllResizeHandles);
+}
+
+function hydrateResizablePanes(config) {
+  const saved = readResizeLayoutState(config.id);
+  return Object.fromEntries(Object.entries(config.panes).map(([paneId, paneConfig]) => {
+    const savedPane = saved[paneId] ?? {};
+    const savedSize = Number(savedPane.size);
+    const lastSize = Number(savedPane.lastSize);
+    return [paneId, {
+      collapsed: Boolean(savedPane.collapsed),
+      size: Number.isFinite(savedSize) && savedSize > 0 ? savedSize : null,
+      lastSize: Number.isFinite(lastSize) && lastSize > 0 ? lastSize : paneConfig.defaultSize
+    }];
+  }));
+}
+
+function readResizeLayoutState(layoutId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(resizeStorageKey(layoutId)) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveResizeLayoutState(runtime) {
+  try {
+    localStorage.setItem(resizeStorageKey(runtime.config.id), JSON.stringify(runtime.panes));
+  } catch {
+    // Layout persistence is best-effort; resizing still applies for the current session.
+  }
+}
+
+function resizeStorageKey(layoutId) {
+  return `${RESIZE_STORAGE_PREFIX}:${layoutId}`;
+}
+
+function startPanelResize(event, layoutId, handleIndex) {
+  if (event.button !== 0) return;
+  const runtime = resizableLayouts.get(layoutId);
+  const handle = runtime?.handles[handleIndex];
+  if (!runtime || !handle) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const axis = resizeAxis(handle.config);
+  const paneId = handle.config.controls;
+  state.resizeDrag = {
+    layoutId,
+    handleIndex,
+    paneId,
+    axis,
+    direction: handle.config.direction,
+    startPointer: resizePointer(event, axis),
+    startSize: currentResizablePaneSize(runtime, paneId, axis)
+  };
+  handle.element.classList.add("dragging");
+  document.body.classList.add(axis === "x" ? "resizing-x" : "resizing-y");
+  try {
+    handle.element.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture may fail if the pointer is already released.
+  }
+}
+
+function movePanelResize(event) {
+  if (!state.resizeDrag) return;
+  event.preventDefault();
+  const runtime = resizableLayouts.get(state.resizeDrag.layoutId);
+  if (!runtime) return;
+  const delta = resizePointer(event, state.resizeDrag.axis) - state.resizeDrag.startPointer;
+  const nextSize = state.resizeDrag.startSize + delta * state.resizeDrag.direction;
+  setResizablePaneSize(runtime, state.resizeDrag.paneId, nextSize);
+}
+
+function endPanelResize() {
+  if (!state.resizeDrag) return;
+  const runtime = resizableLayouts.get(state.resizeDrag.layoutId);
+  const handle = runtime?.handles[state.resizeDrag.handleIndex]?.element;
+  handle?.classList.remove("dragging");
+  document.body.classList.remove("resizing-x", "resizing-y");
+  state.resizeDrag = null;
+}
+
+function handleResizeKey(event, layoutId, handleIndex) {
+  const runtime = resizableLayouts.get(layoutId);
+  const handle = runtime?.handles[handleIndex];
+  if (!runtime || !handle) return;
+  const axis = resizeAxis(handle.config);
+  const isDecrease = event.key === "ArrowLeft" || event.key === "ArrowUp";
+  const isIncrease = event.key === "ArrowRight" || event.key === "ArrowDown";
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    toggleResizablePane(layoutId, handle.config.controls);
+    return;
+  }
+  if (!isDecrease && !isIncrease) return;
+  event.preventDefault();
+  const sign = isIncrease ? 1 : -1;
+  const current = currentResizablePaneSize(runtime, handle.config.controls, axis);
+  setResizablePaneSize(runtime, handle.config.controls, current + sign * RESIZE_STEP * handle.config.direction);
+}
+
+function setResizablePaneSize(runtime, paneId, rawSize, { forceOpen = false } = {}) {
+  const paneConfig = runtime.config.panes[paneId];
+  const paneState = runtime.panes[paneId];
+  if (!paneConfig || !paneState) return;
+
+  const shouldCollapse = !forceOpen && rawSize <= paneConfig.collapseAt;
+  if (shouldCollapse) {
+    if (!paneState.collapsed) paneState.lastSize = Math.max(paneState.size ?? rawSize, paneConfig.defaultSize);
+    paneState.collapsed = true;
+    paneState.size = null;
+  } else {
+    const nextSize = Math.max(rawSize, paneConfig.minSize);
+    paneState.collapsed = false;
+    paneState.size = nextSize;
+    paneState.lastSize = nextSize;
+  }
+
+  applyResizablePane(runtime, paneId);
+  saveResizeLayoutState(runtime);
+}
+
+function toggleResizablePane(layoutId, paneId) {
+  const runtime = resizableLayouts.get(layoutId);
+  const paneConfig = runtime?.config.panes[paneId];
+  const paneState = runtime?.panes[paneId];
+  if (!runtime || !paneConfig || !paneState) return;
+  if (paneState.collapsed) {
+    paneState.collapsed = false;
+    paneState.size = Math.max(paneState.lastSize ?? paneConfig.defaultSize, paneConfig.minSize);
+  } else {
+    paneState.lastSize = currentResizablePaneSize(runtime, paneId, "x");
+    paneState.collapsed = true;
+    paneState.size = null;
+  }
+  applyResizablePane(runtime, paneId);
+  saveResizeLayoutState(runtime);
+}
+
+function ensureResizablePaneOpen(layoutId, paneId) {
+  const runtime = resizableLayouts.get(layoutId);
+  const paneConfig = runtime?.config.panes[paneId];
+  const paneState = runtime?.panes[paneId];
+  if (!runtime || !paneConfig || !paneState?.collapsed) return;
+  paneState.collapsed = false;
+  paneState.size = Math.max(paneState.lastSize ?? paneConfig.defaultSize, paneConfig.minSize);
+  applyResizablePane(runtime, paneId);
+  saveResizeLayoutState(runtime);
+}
+
+function applyResizablePane(runtime, paneId) {
+  const paneConfig = runtime.config.panes[paneId];
+  const paneState = runtime.panes[paneId];
+  const pane = runtime.root.querySelector(paneConfig.selector);
+  if (!pane || !paneState) return;
+
+  pane.classList.toggle("is-collapsed", paneState.collapsed);
+  if (paneState.collapsed) {
+    runtime.root.style.setProperty(paneConfig.variable, "0px");
+  } else if (paneState.size == null) {
+    runtime.root.style.removeProperty(paneConfig.variable);
+  } else {
+    runtime.root.style.setProperty(paneConfig.variable, `${Math.round(paneState.size)}px`);
+  }
+  updateAllResizeHandlesForLayout(runtime);
+}
+
+function updateAllResizeHandles() {
+  resizableLayouts.forEach(updateAllResizeHandlesForLayout);
+}
+
+function updateAllResizeHandlesForLayout(runtime) {
+  runtime.handles.forEach((_, index) => updateResizeHandle(runtime, index));
+}
+
+function updateResizeHandle(runtime, handleIndex) {
+  const handle = runtime.handles[handleIndex];
+  if (!handle) return;
+  const axis = resizeAxis(handle.config);
+  const paneState = runtime.panes[handle.config.controls];
+  handle.element.dataset.axis = axis;
+  handle.element.dataset.collapsed = String(Boolean(paneState?.collapsed));
+  handle.element.setAttribute("aria-orientation", axis === "x" ? "vertical" : "horizontal");
+}
+
+function resizeAxis(handleConfig) {
+  return typeof handleConfig.axis === "function" ? handleConfig.axis() : handleConfig.axis;
+}
+
+function resizePointer(event, axis) {
+  return axis === "x" ? event.clientX : event.clientY;
+}
+
+function currentResizablePaneSize(runtime, paneId, axis) {
+  const paneConfig = runtime.config.panes[paneId];
+  const paneState = runtime.panes[paneId];
+  if (paneState?.collapsed) return 0;
+  if (paneState?.size != null) return paneState.size;
+  const pane = runtime.root.querySelector(paneConfig.selector);
+  const rect = pane?.getBoundingClientRect();
+  if (!rect) return paneConfig.defaultSize;
+  return axis === "x" ? rect.width : rect.height;
+}
+
 function renderGraph() {
-  const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
+  const workflow = currentWorkflowRecord();
   if (!workflow) {
+    setGraphCanvasSize({ width: 780, height: 540 });
     elements.graphNodeLayer.innerHTML = `<div class="graph-empty">${escapeHtml(t("noWorkflowSelected"))}</div>`;
     elements.graphEdges.innerHTML = "";
+    renderGraphNodeEditor();
     return;
   }
 
   const graph = buildGraphData(workflow.workflow);
+  if (state.selectedGraphNodeId && !graph.nodes.some((node) => node.id === state.selectedGraphNodeId)) {
+    state.selectedGraphNodeId = null;
+  }
   const statusByStep = buildStepStatusMap(
     state.selectedRunDetail?.run?.workflowId === workflow.id ? state.selectedRunDetail.events : []
   );
@@ -511,17 +1043,19 @@ function renderGraph() {
   state.graphPositions = positions;
   const size = graphCanvasSize(graph.nodes, positions);
 
-  elements.workflowGraph.style.minWidth = `${size.width}px`;
-  elements.workflowGraph.style.minHeight = `${size.height}px`;
+  setGraphCanvasSize(size);
   elements.graphNodeLayer.innerHTML = "";
-  elements.graphNodeLayer.style.width = `${size.width}px`;
-  elements.graphNodeLayer.style.height = `${size.height}px`;
 
   for (const node of graph.nodes) {
     const position = positions[node.id];
     const status = statusByStep[node.id] ?? "idle";
     const item = document.createElement("div");
-    item.className = `workflow-node ${node.depth ? "child" : "root"} ${statusClassForNode(status)}`;
+    item.className = [
+      "workflow-node",
+      node.depth ? "child" : "root",
+      statusClassForNode(status),
+      node.id === state.selectedGraphNodeId ? "selected" : ""
+    ].filter(Boolean).join(" ");
     item.dataset.nodeId = node.id;
     item.style.left = `${position.x}px`;
     item.style.top = `${position.y}px`;
@@ -534,10 +1068,266 @@ function renderGraph() {
       <span class="node-meta">${escapeHtml(node.meta)}</span>
     `;
     item.addEventListener("pointerdown", (event) => startGraphDrag(event, node.id));
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectGraphNode(node.id);
+    });
     elements.graphNodeLayer.append(item);
   }
 
   renderGraphEdges(graph.edges, positions, size);
+  centerGraphViewportIfNeeded(workflow.id, graph.nodes, positions);
+  renderGraphNodeEditor();
+}
+
+function currentWorkflowRecord() {
+  return state.workflows.find((item) => item.id === state.selectedWorkflowId) ?? null;
+}
+
+function readWorkflowDraft({ silent = false } = {}) {
+  try {
+    const workflow = parseJson(elements.workflowJson.value, "Workflow");
+    elements.workflowJson.classList.remove("invalid");
+    return workflow;
+  } catch (error) {
+    elements.workflowJson.classList.add("invalid");
+    if (!silent) showToast(error.message);
+    return null;
+  }
+}
+
+function commitWorkflowDraft(workflow, { syncTextarea = true } = {}) {
+  const current = currentWorkflowRecord();
+  if (current) current.workflow = workflow;
+  if (syncTextarea) elements.workflowJson.value = formatJson(workflow);
+  elements.workflowJson.classList.remove("invalid");
+}
+
+function syncWorkflowJsonToGraph() {
+  const workflow = readWorkflowDraft({ silent: true });
+  if (!workflow || typeof workflow !== "object") return;
+  commitWorkflowDraft(workflow, { syncTextarea: false });
+  renderGraph();
+}
+
+function selectGraphNode(nodeId, { renderGraphView = true } = {}) {
+  ensureResizablePaneOpen("graph", "nodeEditor");
+  state.selectedGraphNodeId = nodeId;
+  if (renderGraphView) {
+    renderGraph();
+    revealGraphNodeEditor();
+    return;
+  }
+  updateGraphNodeSelection();
+  renderGraphNodeEditor();
+  revealGraphNodeEditor();
+}
+
+function updateGraphNodeSelection() {
+  elements.graphNodeLayer.querySelectorAll(".workflow-node").forEach((node) => {
+    node.classList.toggle("selected", node.dataset.nodeId === state.selectedGraphNodeId);
+  });
+}
+
+function renderGraphNodeEditor() {
+  const match = state.selectedGraphNodeId
+    ? findWorkflowNode(currentWorkflowRecord()?.workflow, state.selectedGraphNodeId)
+    : null;
+  const hasSelection = Boolean(match);
+  elements.nodeEditorEmpty.hidden = hasSelection;
+  elements.nodeEditorForm.hidden = !hasSelection;
+
+  if (!match) {
+    elements.nodeEditorKind.textContent = t("nodeEditor");
+    elements.nodeEditorKind.className = "pill muted";
+    return;
+  }
+
+  state.nodeEditorSyncing = true;
+  try {
+    elements.nodeEditorKind.textContent = nodeEditorKindLabel(match.kind);
+    elements.nodeEditorKind.className = `pill ${match.kind === "api" ? "warning" : match.kind === "browser" ? "" : "muted"}`;
+    for (const field of NODE_EDITOR_FIELDS) {
+      const control = elements[field.element];
+      const value = readNodeEditorField(match.step, field);
+      if (control.tagName === "SELECT") ensureSelectOption(control, value);
+      control.value = value;
+      control.classList.remove("invalid");
+    }
+    elements.nodeEditorJson.value = formatJson(match.step);
+    elements.nodeEditorJson.classList.remove("invalid");
+  } finally {
+    state.nodeEditorSyncing = false;
+  }
+}
+
+function revealGraphNodeEditor() {
+  requestAnimationFrame(() => {
+    const editor = elements.graphNodeEditor;
+    const rect = editor.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.top >= 0 && rect.bottom <= viewportHeight) return;
+    editor.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+}
+
+function nodeEditorKindLabel(kind) {
+  if (kind === "api") return t("nodeEditorApi");
+  if (kind === "browser") return t("nodeEditorBrowser");
+  return t("nodeEditorMain");
+}
+
+function findWorkflowNode(workflow, nodeId) {
+  const id = String(nodeId ?? "");
+  if (!id || !Array.isArray(workflow?.steps)) return null;
+
+  for (const [topIndex, step] of workflow.steps.entries()) {
+    if (String(step.id ?? "") === id) return { step, kind: "main", topIndex, childIndex: null };
+    if (step.action !== "operation") continue;
+
+    for (const [childIndex, child] of (step.browserSteps ?? []).entries()) {
+      if (String(child.id ?? "") === id) return { step: child, kind: "browser", topIndex, childIndex };
+    }
+
+    if (String(step.api?.id ?? "") === id) {
+      return { step: step.api, kind: "api", topIndex, childIndex: (step.browserSteps ?? []).length };
+    }
+  }
+  return null;
+}
+
+function updateSelectedGraphNodeFromFields() {
+  if (state.nodeEditorSyncing || !state.selectedGraphNodeId) return;
+  const workflow = readWorkflowDraft();
+  if (!workflow) return;
+
+  const match = findWorkflowNode(workflow, state.selectedGraphNodeId);
+  if (!match) return;
+  const previousId = String(match.step.id ?? "");
+
+  for (const field of NODE_EDITOR_FIELDS) {
+    writeNodeEditorField(match.step, field, elements[field.element].value);
+  }
+
+  commitGraphNodeEdit(workflow, previousId, String(match.step.id ?? previousId));
+}
+
+function updateSelectedGraphNodeFromJson() {
+  if (state.nodeEditorSyncing || !state.selectedGraphNodeId) return;
+  const workflow = readWorkflowDraft();
+  if (!workflow) return;
+
+  const match = findWorkflowNode(workflow, state.selectedGraphNodeId);
+  if (!match) return;
+
+  let nextStep;
+  try {
+    nextStep = JSON.parse(elements.nodeEditorJson.value || "{}");
+    if (!nextStep || typeof nextStep !== "object" || Array.isArray(nextStep)) throw new Error("Node must be an object");
+    elements.nodeEditorJson.classList.remove("invalid");
+  } catch {
+    elements.nodeEditorJson.classList.add("invalid");
+    return;
+  }
+
+  const previousId = String(match.step.id ?? "");
+  const previousAction = match.step.action;
+  if (!nextStep.id) nextStep.id = previousId;
+  if (!nextStep.action) nextStep.action = previousAction;
+  replaceObjectContents(match.step, nextStep);
+  commitGraphNodeEdit(workflow, previousId, String(match.step.id ?? previousId));
+}
+
+function commitGraphNodeEdit(workflow, previousId, nextId) {
+  const normalizedNextId = nextId || previousId;
+  if (previousId && normalizedNextId && previousId !== normalizedNextId) {
+    transferGraphNodePosition(previousId, normalizedNextId);
+    transferOperationModeKey(previousId, normalizedNextId);
+  }
+
+  state.selectedGraphNodeId = normalizedNextId;
+  commitWorkflowDraft(workflow);
+  if (state.selectedWorkflowId) saveGraphPositions(state.selectedWorkflowId, state.graphPositions);
+  renderGraph();
+}
+
+function transferGraphNodePosition(previousId, nextId) {
+  if (!state.graphPositions[previousId]) return;
+  if (!state.graphPositions[nextId]) state.graphPositions[nextId] = state.graphPositions[previousId];
+  delete state.graphPositions[previousId];
+}
+
+function transferOperationModeKey(previousId, nextId) {
+  try {
+    const modes = parseJson(elements.operationModesJson.value, "Operation Modes");
+    if (!Object.hasOwn(modes, previousId) || Object.hasOwn(modes, nextId)) return;
+    modes[nextId] = modes[previousId];
+    delete modes[previousId];
+    elements.operationModesJson.value = formatJson(modes);
+    const context = parseJson(elements.runContextJson.value, "Context");
+    context.operationModes = modes;
+    elements.runContextJson.value = formatJson(context);
+  } catch {
+    // Operation mode migration is best-effort; workflow editing should not block on run config JSON.
+  }
+}
+
+function readNodeEditorField(step, field) {
+  if (field.read) return String(field.read(step) ?? "");
+  return fieldValueToInput(step[field.field]);
+}
+
+function writeNodeEditorField(step, field, value) {
+  if (field.write) {
+    field.write(step, value);
+    return;
+  }
+  const nextValue = inputToFieldValue(value, { parseJsonLike: field.parseJsonLike });
+  if (nextValue === undefined) {
+    delete step[field.field];
+  } else {
+    step[field.field] = nextValue;
+  }
+}
+
+function writeAliasField(step, fields, value) {
+  const nextValue = value.trim();
+  if (!nextValue) {
+    fields.forEach((field) => delete step[field]);
+    return;
+  }
+  const existingField = fields.find((field) => Object.hasOwn(step, field)) ?? fields[0];
+  step[existingField] = nextValue;
+}
+
+function fieldValueToInput(value) {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return formatJson(value);
+}
+
+function inputToFieldValue(value, { parseJsonLike = false } = {}) {
+  const text = value.trim();
+  if (!text) return undefined;
+  if (!parseJsonLike || !/^[{\[]/.test(text)) return text;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function replaceObjectContents(target, source) {
+  Object.keys(target).forEach((key) => delete target[key]);
+  Object.assign(target, structuredCloneSafe(source));
+}
+
+function ensureSelectOption(select, value) {
+  if ([...select.options].some((option) => option.value === value)) return;
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = value;
+  select.append(option);
 }
 
 function buildGraphData(workflow) {
@@ -545,14 +1335,14 @@ function buildGraphData(workflow) {
   const edges = [];
   let previousTopLevel = null;
   for (const [topIndex, step] of (workflow.steps ?? []).entries()) {
-    nodes.push(createGraphNode(step, { depth: 0, topIndex, childIndex: 0, branch: "main" }));
+    nodes.push(createGraphNode(step, { depth: 0, topIndex, childIndex: 0, branch: "main", kind: "main" }));
     if (previousTopLevel) edges.push({ from: previousTopLevel, to: step.id, kind: "main" });
     previousTopLevel = step.id;
 
     if (step.action === "operation") {
       let previousBrowserStep = null;
       for (const [childIndex, child] of (step.browserSteps ?? []).entries()) {
-        nodes.push(createGraphNode(child, { depth: 1, topIndex, childIndex, branch: "browser" }));
+        nodes.push(createGraphNode(child, { depth: 1, topIndex, childIndex, branch: "browser", kind: "browser" }));
         edges.push({ from: step.id, to: child.id, kind: "branch" });
         if (previousBrowserStep) edges.push({ from: previousBrowserStep, to: child.id, kind: "branch" });
         previousBrowserStep = child.id;
@@ -562,7 +1352,8 @@ function buildGraphData(workflow) {
           depth: 1,
           topIndex,
           childIndex: (step.browserSteps ?? []).length,
-          branch: "api"
+          branch: "api",
+          kind: "api"
         }));
         edges.push({ from: step.id, to: step.api.id, kind: "branch" });
       }
@@ -571,7 +1362,7 @@ function buildGraphData(workflow) {
   return { nodes, edges };
 }
 
-function createGraphNode(step, { depth, topIndex, childIndex, branch }) {
+function createGraphNode(step, { depth, topIndex, childIndex, branch, kind }) {
   return {
     id: step.id,
     action: step.action,
@@ -579,6 +1370,7 @@ function createGraphNode(step, { depth, topIndex, childIndex, branch }) {
     topIndex,
     childIndex,
     branch,
+    kind,
     label: shortStepLabel(step),
     meta: stepMeta(step, branch)
   };
@@ -613,27 +1405,268 @@ function buildStepStatusMap(events = []) {
 
 function loadGraphPositions(workflowId, nodes) {
   const defaults = defaultGraphPositions(nodes);
+  const workflow = state.workflows.find((item) => item.id === workflowId);
+  const savedGraphPositions = workflow?.graph?.layouts?.[state.graphLayout]?.positions;
+  if (hasGraphPositions(savedGraphPositions)) {
+    const positions = mergeGraphPositions(nodes, defaults, savedGraphPositions);
+    if (shouldRebaseGraphPositions(nodes, savedGraphPositions)) {
+      syncGraphPositionsToWorkflow(workflowId, positions);
+    }
+    return positions;
+  }
+
   try {
     const saved = JSON.parse(localStorage.getItem(graphStorageKey(workflowId)) || "{}");
-    return Object.fromEntries(nodes.map((node) => [node.id, saved[node.id] ?? defaults[node.id]]));
+    const positions = mergeGraphPositions(nodes, defaults, saved);
+    if (shouldRebaseGraphPositions(nodes, saved)) {
+      saveGraphPositions(workflowId, positions);
+    }
+    return positions;
   } catch {
     return defaults;
   }
 }
 
+function mergeGraphPositions(nodes, defaults, saved) {
+  const positions = rebaseGraphPositionsIfNeeded(nodes, normalizeGraphPositions(saved));
+  return Object.fromEntries(nodes.map((node) => [node.id, positions[node.id] ?? defaults[node.id]]));
+}
+
+function rebaseGraphPositionsIfNeeded(nodes, positions) {
+  if (!shouldRebaseGraphPositions(nodes, positions)) return positions;
+  const bounds = graphContentBounds(nodes, positions);
+  const offsetX = Math.max(0, bounds.minX - GRAPH_CANVAS_MARGIN);
+  const offsetY = Math.max(0, bounds.minY - GRAPH_CANVAS_MARGIN);
+  return Object.fromEntries(Object.entries(positions).map(([nodeId, point]) => [nodeId, {
+    x: Math.round(point.x - offsetX),
+    y: Math.round(point.y - offsetY)
+  }]));
+}
+
+function shouldRebaseGraphPositions(nodes, positions) {
+  const normalized = normalizeGraphPositions(positions);
+  if (!hasGraphPositions(normalized)) return false;
+  const bounds = graphContentBounds(nodes, normalized);
+  const defaultBounds = graphContentBounds(nodes, defaultGraphPositions(nodes));
+  const maxExpectedX = Math.max(GRAPH_CANVAS_MARGIN * 8, defaultBounds.width * 2);
+  const maxExpectedY = Math.max(GRAPH_CANVAS_MARGIN * 8, defaultBounds.height * 2);
+  return bounds.minX > maxExpectedX || bounds.minY > maxExpectedY;
+}
+
+function hasGraphPositions(positions) {
+  return Object.keys(normalizeGraphPositions(positions)).length > 0;
+}
+
+function normalizeGraphPositions(positions = {}) {
+  if (!positions || typeof positions !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(positions)
+      .map(([nodeId, point]) => [nodeId, { x: Number(point?.x), y: Number(point?.y) }])
+      .filter(([nodeId, point]) => nodeId && Number.isFinite(point.x) && Number.isFinite(point.y))
+  );
+}
+
+function normalizeWorkflowGraphRecord(graph = {}) {
+  const layouts = {};
+  const rawLayouts = graph && typeof graph === "object" && graph.layouts && typeof graph.layouts === "object"
+    ? graph.layouts
+    : {};
+
+  for (const [layout, layoutRecord] of Object.entries(rawLayouts)) {
+    if (!layoutRecord || typeof layoutRecord !== "object") continue;
+    layouts[layout] = {
+      positions: normalizeGraphPositions(layoutRecord.positions),
+      updatedAt: typeof layoutRecord.updatedAt === "string" ? layoutRecord.updatedAt : null
+    };
+  }
+
+  return {
+    version: Number(graph?.version) || 1,
+    layout: typeof graph?.layout === "string" ? graph.layout : state.graphLayout,
+    layouts
+  };
+}
+
+function workflowGraphWithPositions(graph, layout, positions) {
+  const normalized = normalizeWorkflowGraphRecord(graph);
+  normalized.layout = layout;
+  normalized.layouts[layout] = {
+    positions: normalizeGraphPositions(positions),
+    updatedAt: new Date().toISOString()
+  };
+  return normalized;
+}
+
+function syncGraphPositionsToWorkflow(workflowId, positions) {
+  const workflow = state.workflows.find((item) => item.id === workflowId);
+  if (!workflow) return null;
+  workflow.graph = workflowGraphWithPositions(workflow.graph, state.graphLayout, positions);
+  return workflow.graph;
+}
+
+function syncGraphLayoutToWorkflow(workflowId, layout) {
+  const workflow = state.workflows.find((item) => item.id === workflowId);
+  if (!workflow) return null;
+  workflow.graph = {
+    ...normalizeWorkflowGraphRecord(workflow.graph),
+    layout
+  };
+  return workflow.graph;
+}
+
+function graphRecordForSave() {
+  const workflow = currentWorkflowRecord();
+  return {
+    ...normalizeWorkflowGraphRecord(workflow?.graph ?? {}),
+    layout: state.graphLayout
+  };
+}
+
 function defaultGraphPositions(nodes) {
-  return Object.fromEntries(nodes.map((node) => [
-    node.id,
-    node.depth === 0
-      ? { x: 48 + node.topIndex * 270, y: 58 }
-      : { x: 48 + node.topIndex * 270 + (node.childIndex % 2) * 230, y: 220 + Math.floor(node.childIndex / 2) * 124 }
-  ]));
+  const layoutConfig = graphLayoutConfig();
+  const groups = graphLayoutGroups(nodes, layoutConfig);
+  const contentWidth = Math.max(
+    GRAPH_MIN_CONTENT_WIDTH,
+    groups.reduce((sum, group) => sum + group.width, 0) + Math.max(0, groups.length - 1) * layoutConfig.groupGap
+  );
+  const startX = GRAPH_CANVAS_MARGIN;
+  const startY = GRAPH_CANVAS_MARGIN;
+  let cursorX = startX;
+  const positions = {};
+
+  for (const group of groups) {
+    const mainX = Math.round(cursorX + (group.width - GRAPH_NODE_WIDTH) / 2);
+    positions[group.main.id] = { x: mainX, y: startY };
+    const gridWidth = group.childColumnCount > 0
+      ? (group.childColumnCount - 1) * layoutConfig.childColumnStep + GRAPH_CHILD_NODE_WIDTH
+      : GRAPH_NODE_WIDTH;
+    const childStartX = Math.round(cursorX + (group.width - gridWidth) / 2);
+
+    for (const child of group.children) {
+      const column = child.childIndex % group.childColumnCount;
+      const row = Math.floor(child.childIndex / group.childColumnCount);
+      positions[child.id] = {
+        x: childStartX + column * layoutConfig.childColumnStep,
+        y: startY + layoutConfig.mainToBranchY + row * layoutConfig.childRowStep
+      };
+    }
+
+    cursorX += group.width + layoutConfig.groupGap;
+  }
+
+  return positions;
+}
+
+function graphLayoutGroups(nodes, layoutConfig) {
+  const topLevelNodes = nodes
+    .filter((node) => node.depth === 0)
+    .sort((left, right) => left.topIndex - right.topIndex);
+
+  return topLevelNodes.map((main) => {
+    const children = nodes
+      .filter((node) => node.depth > 0 && node.topIndex === main.topIndex)
+      .sort((left, right) => left.childIndex - right.childIndex);
+    const childColumnCount = graphChildColumnCount(children.length, layoutConfig);
+    const childRowCount = children.length ? Math.ceil(children.length / childColumnCount) : 0;
+    const childGridWidth = children.length
+      ? (childColumnCount - 1) * layoutConfig.childColumnStep + GRAPH_CHILD_NODE_WIDTH
+      : GRAPH_NODE_WIDTH;
+    const width = Math.max(layoutConfig.groupMinWidth, childGridWidth + layoutConfig.groupPadding);
+    const height = children.length
+      ? layoutConfig.mainToBranchY + (childRowCount - 1) * layoutConfig.childRowStep + GRAPH_NODE_HEIGHT
+      : GRAPH_NODE_HEIGHT;
+
+    return { main, children, childColumnCount, width, height };
+  });
+}
+
+function graphLayoutConfig() {
+  return GRAPH_LAYOUT_CONFIGS[state.graphLayout] ?? GRAPH_LAYOUT_CONFIGS.sequence;
+}
+
+function graphChildColumnCount(childCount, layoutConfig) {
+  if (!childCount) return 1;
+  if (layoutConfig.childColumns === "all") return childCount;
+  return Math.min(childCount, Math.max(2, Math.ceil(Math.sqrt(childCount))));
+}
+
+function graphContentBounds(nodes, positions) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const node of nodes) {
+    const position = positions[node.id];
+    if (!position) continue;
+    minX = Math.min(minX, position.x);
+    minY = Math.min(minY, position.y);
+    maxX = Math.max(maxX, position.x + GRAPH_NODE_WIDTH);
+    maxY = Math.max(maxY, position.y + GRAPH_NODE_HEIGHT);
+  }
+
+  if (!Number.isFinite(minX)) {
+    return {
+      minX: 0,
+      minY: 0,
+      maxX: GRAPH_MIN_CONTENT_WIDTH,
+      maxY: GRAPH_MIN_CONTENT_HEIGHT,
+      width: GRAPH_MIN_CONTENT_WIDTH,
+      height: GRAPH_MIN_CONTENT_HEIGHT,
+      centerX: GRAPH_MIN_CONTENT_WIDTH / 2,
+      centerY: GRAPH_MIN_CONTENT_HEIGHT / 2
+    };
+  }
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: Math.max(GRAPH_MIN_CONTENT_WIDTH, maxX - minX),
+    height: Math.max(GRAPH_MIN_CONTENT_HEIGHT, maxY - minY),
+    centerX: minX + (maxX - minX) / 2,
+    centerY: minY + (maxY - minY) / 2
+  };
+}
+
+function graphCanvasAxisSize(contentSize) {
+  return Math.round((contentSize + GRAPH_CANVAS_MARGIN * 2) * GRAPH_CANVAS_SCALE);
 }
 
 function graphCanvasSize(nodes, positions) {
-  const maxX = Math.max(...nodes.map((node) => positions[node.id]?.x ?? 0), 780);
-  const maxY = Math.max(...nodes.map((node) => positions[node.id]?.y ?? 0), 420);
-  return { width: maxX + 280, height: maxY + 160 };
+  const bounds = graphContentBounds(nodes, positions);
+  return {
+    width: Math.max(graphCanvasAxisSize(bounds.width), bounds.centerX * 2, bounds.maxX + GRAPH_CANVAS_MARGIN),
+    height: Math.max(graphCanvasAxisSize(bounds.height), bounds.centerY * 2, bounds.maxY + GRAPH_CANVAS_MARGIN)
+  };
+}
+
+function setGraphCanvasSize(size) {
+  state.graphSize = size;
+  const scaledWidth = Math.round(size.width * state.graphZoom);
+  const scaledHeight = Math.round(size.height * state.graphZoom);
+  elements.graphCanvas.style.width = `${scaledWidth}px`;
+  elements.graphCanvas.style.height = `${scaledHeight}px`;
+  elements.graphCanvas.style.setProperty("--graph-grid-size", `${Math.max(8, 28 * state.graphZoom)}px`);
+  for (const element of [elements.graphEdges, elements.graphNodeLayer]) {
+    element.style.width = `${size.width}px`;
+    element.style.height = `${size.height}px`;
+    element.style.transform = `scale(${state.graphZoom})`;
+  }
+  updateGraphZoomLabel();
+}
+
+function centerGraphViewportIfNeeded(workflowId, nodes, positions) {
+  if (state.graphViewportCenterKey !== workflowId) return;
+  state.graphViewportCenterKey = null;
+  const bounds = graphContentBounds(nodes, positions);
+  requestAnimationFrame(() => {
+    const maxLeft = Math.max(0, elements.workflowGraph.scrollWidth - elements.workflowGraph.clientWidth);
+    const maxTop = Math.max(0, elements.workflowGraph.scrollHeight - elements.workflowGraph.clientHeight);
+    elements.workflowGraph.scrollLeft = clamp(bounds.centerX * state.graphZoom - elements.workflowGraph.clientWidth / 2, 0, maxLeft);
+    elements.workflowGraph.scrollTop = clamp(bounds.centerY * state.graphZoom - elements.workflowGraph.clientHeight / 2, 0, maxTop);
+  });
 }
 
 function renderGraphEdges(edges, positions, size = null) {
@@ -672,6 +1705,7 @@ function autoLayoutSelectedWorkflow() {
   if (!workflow) return;
   const graph = buildGraphData(workflow.workflow);
   state.graphPositions = defaultGraphPositions(graph.nodes);
+  state.graphViewportCenterKey = workflow.id;
   saveGraphPositions(workflow.id, state.graphPositions);
   renderGraph();
 }
@@ -683,6 +1717,7 @@ function startGraphDrag(event, nodeId) {
   const current = state.graphPositions[nodeId];
   if (!current) return;
   event.preventDefault();
+  selectGraphNode(nodeId, { renderGraphView: false });
   event.currentTarget.classList.add("dragging");
   state.graphDrag = {
     workflowId: workflow.id,
@@ -696,10 +1731,11 @@ function startGraphDrag(event, nodeId) {
 
 function moveGraphNode(event) {
   if (!state.graphDrag) return;
+  event.preventDefault();
   const { nodeId, startX, startY, originX, originY } = state.graphDrag;
   const next = {
-    x: Math.max(16, originX + event.clientX - startX),
-    y: Math.max(16, originY + event.clientY - startY)
+    x: Math.max(16, originX + (event.clientX - startX) / state.graphZoom),
+    y: Math.max(16, originY + (event.clientY - startY) / state.graphZoom)
   };
   state.graphPositions[nodeId] = next;
   const node = elements.graphNodeLayer.querySelector(`[data-node-id="${cssEscape(nodeId)}"]`);
@@ -711,8 +1747,37 @@ function moveGraphNode(event) {
   if (workflow) {
     const graph = buildGraphData(workflow.workflow);
     const size = graphCanvasSize(graph.nodes, state.graphPositions);
+    setGraphCanvasSize(size);
     renderGraphEdges(graph.edges, state.graphPositions, size);
   }
+}
+
+function startGraphPan(event) {
+  if (event.button !== 0 || event.target.closest(".workflow-node")) return;
+  if (!elements.graphCanvas.contains(event.target)) return;
+  event.preventDefault();
+  state.graphPan = {
+    startX: event.clientX,
+    startY: event.clientY,
+    originLeft: elements.workflowGraph.scrollLeft,
+    originTop: elements.workflowGraph.scrollTop
+  };
+  elements.workflowGraph.classList.add("panning");
+}
+
+function moveGraphPan(event) {
+  if (!state.graphPan) return;
+  event.preventDefault();
+  const deltaX = event.clientX - state.graphPan.startX;
+  const deltaY = event.clientY - state.graphPan.startY;
+  elements.workflowGraph.scrollLeft = state.graphPan.originLeft - deltaX;
+  elements.workflowGraph.scrollTop = state.graphPan.originTop - deltaY;
+}
+
+function endGraphInteraction() {
+  endGraphDrag();
+  endGraphPan();
+  endGraphGesture();
 }
 
 function endGraphDrag() {
@@ -724,7 +1789,128 @@ function endGraphDrag() {
   saveGraphPositions(workflowId, state.graphPositions);
 }
 
+function endGraphPan() {
+  if (!state.graphPan) return;
+  state.graphPan = null;
+  elements.workflowGraph.classList.remove("panning");
+}
+
+function handleGraphWheel(event) {
+  if (!state.graphSize) return;
+  event.preventDefault();
+  const nextZoom = state.graphZoom * Math.exp(-event.deltaY * GRAPH_WHEEL_ZOOM_SENSITIVITY);
+  zoomGraphAt(event.clientX, event.clientY, nextZoom);
+}
+
+function startGraphGesture(event) {
+  if (!state.graphSize) return;
+  event.preventDefault();
+  const point = graphEventPoint(event);
+  state.graphGesture = {
+    startZoom: state.graphZoom,
+    clientX: point.clientX,
+    clientY: point.clientY
+  };
+}
+
+function moveGraphGesture(event) {
+  if (!state.graphGesture) return;
+  event.preventDefault();
+  const gestureScale = Number(event.scale) || 1;
+  const point = graphEventPoint(event, state.graphGesture);
+  zoomGraphAt(point.clientX, point.clientY, state.graphGesture.startZoom * gestureScale);
+}
+
+function endGraphGesture() {
+  state.graphGesture = null;
+}
+
+function graphEventPoint(event, fallback = null) {
+  if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+    return { clientX: event.clientX, clientY: event.clientY };
+  }
+  if (fallback) return fallback;
+  const rect = elements.workflowGraph.getBoundingClientRect();
+  return {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2
+  };
+}
+
+function zoomGraphAt(clientX, clientY, nextZoom) {
+  const previousZoom = state.graphZoom;
+  const zoom = normalizeGraphZoom(nextZoom);
+  if (Math.abs(zoom - previousZoom) < 0.001) return;
+  const rect = elements.workflowGraph.getBoundingClientRect();
+  const viewportX = clamp(clientX - rect.left, 0, rect.width);
+  const viewportY = clamp(clientY - rect.top, 0, rect.height);
+  const logicalX = (elements.workflowGraph.scrollLeft + viewportX) / previousZoom;
+  const logicalY = (elements.workflowGraph.scrollTop + viewportY) / previousZoom;
+
+  state.graphZoom = zoom;
+  saveGraphZoom();
+  setGraphCanvasSize(state.graphSize);
+
+  requestAnimationFrame(() => {
+    const maxLeft = Math.max(0, elements.workflowGraph.scrollWidth - elements.workflowGraph.clientWidth);
+    const maxTop = Math.max(0, elements.workflowGraph.scrollHeight - elements.workflowGraph.clientHeight);
+    elements.workflowGraph.scrollLeft = clamp(logicalX * zoom - viewportX, 0, maxLeft);
+    elements.workflowGraph.scrollTop = clamp(logicalY * zoom - viewportY, 0, maxTop);
+  });
+}
+
+function normalizeGraphZoom(value) {
+  return clamp(Number(value) || 1, GRAPH_MIN_ZOOM, GRAPH_MAX_ZOOM);
+}
+
+function saveGraphZoom() {
+  try {
+    localStorage.setItem("webops-forge-graph-zoom", String(state.graphZoom));
+  } catch {
+    // Zoom persistence is best-effort; the current view still updates.
+  }
+}
+
+function updateGraphZoomLabel() {
+  if (!elements.graphZoomLevel) return;
+  elements.graphZoomLevel.textContent = `${Math.round(state.graphZoom * 100)}%`;
+}
+
+function setGraphLayout(layout) {
+  const nextLayout = normalizeGraphLayout(layout);
+  if (state.graphLayout === nextLayout) return;
+  state.graphLayout = nextLayout;
+  saveGraphLayout();
+  updateGraphLayoutButtons();
+  if (state.selectedWorkflowId) {
+    state.graphViewportCenterKey = state.selectedWorkflowId;
+    syncGraphLayoutToWorkflow(state.selectedWorkflowId, nextLayout);
+  }
+  renderGraph();
+}
+
+function normalizeGraphLayout(layout) {
+  return Object.hasOwn(GRAPH_LAYOUT_CONFIGS, layout) ? layout : "sequence";
+}
+
+function saveGraphLayout() {
+  try {
+    localStorage.setItem("webops-forge-graph-layout", state.graphLayout);
+  } catch {
+    // Layout preference persistence is best-effort; the current view still updates.
+  }
+}
+
+function updateGraphLayoutButtons() {
+  elements.graphLayoutButtons.forEach((button) => {
+    const active = button.dataset.graphLayout === state.graphLayout;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
 function saveGraphPositions(workflowId, positions) {
+  syncGraphPositionsToWorkflow(workflowId, positions);
   try {
     localStorage.setItem(graphStorageKey(workflowId), JSON.stringify(positions));
   } catch {
@@ -733,13 +1919,18 @@ function saveGraphPositions(workflowId, positions) {
 }
 
 function graphStorageKey(workflowId) {
-  return `webops-forge-graph:${workflowId}`;
+  return `webops-forge-graph:${GRAPH_LAYOUT_VERSION}:${state.graphLayout}:${workflowId}`;
 }
 
 function selectWorkflow(id) {
   const workflow = state.workflows.find((item) => item.id === id);
   if (!workflow) return;
   state.selectedWorkflowId = id;
+  state.graphViewportCenterKey = id;
+  state.selectedGraphNodeId = null;
+  state.graphLayout = normalizeGraphLayout(workflow.graph?.layout ?? state.graphLayout);
+  saveGraphLayout();
+  updateGraphLayoutButtons();
   elements.workflowName.value = workflow.name;
   elements.workflowId.value = workflow.id;
   elements.workflowDescription.value = workflow.description ?? "";
@@ -1287,11 +2478,14 @@ async function saveSelectedWorkflow() {
     const id = elements.workflowId.value.trim();
     const context = parseJson(elements.runContextJson.value, "Context");
     applyOperationModes(context);
+    const workflowDefinition = parseJson(elements.workflowJson.value, "Workflow");
+    commitWorkflowDraft(workflowDefinition, { syncTextarea: false });
     const body = {
       id,
       name: elements.workflowName.value.trim(),
       description: elements.workflowDescription.value.trim(),
-      workflow: parseJson(elements.workflowJson.value, "Workflow"),
+      workflow: workflowDefinition,
+      graph: graphRecordForSave(),
       defaultRun: {
         mode: elements.runMode.value,
         profileId: elements.profileSelect.value || null,
@@ -1575,6 +2769,7 @@ function applyStaticTranslations() {
   translateStatusOptions(elements.profileLoginState);
   translateStatusOptions(elements.profileStatus);
   translateStatusOptions(elements.registryItemStatus);
+  updateGraphLayoutButtons();
 }
 
 function translateStatusOptions(select) {
@@ -1672,6 +2867,10 @@ function formatBytes(value) {
 function shorten(value, max = 42) {
   const text = String(value ?? "");
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function parseList(value) {

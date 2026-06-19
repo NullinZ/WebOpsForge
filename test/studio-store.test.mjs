@@ -77,6 +77,26 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     assert.ok(savedRegistryItem.registry.sites.some((site) => site.id === "custom-site"));
 
     const workflow = (await store.listWorkflows())[0];
+    const workflowWithGraph = await store.saveWorkflow({
+      ...workflow,
+      graph: {
+        version: 1,
+        layout: "sequence",
+        layouts: {
+          sequence: {
+            positions: {
+              searchSuppliers: { x: 1200, y: 900 },
+              badPosition: { x: "left", y: 12 }
+            },
+            updatedAt: "2026-06-18T00:00:00.000Z"
+          }
+        }
+      }
+    });
+    assert.equal(workflowWithGraph.graph.layout, "sequence");
+    assert.deepEqual(workflowWithGraph.graph.layouts.sequence.positions.searchSuppliers, { x: 1200, y: 900 });
+    assert.equal(workflowWithGraph.graph.layouts.sequence.positions.badPosition, undefined);
+
     const run = await store.createRun({
       workflowId: workflow.id,
       profileId: profile.id,
@@ -93,6 +113,10 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
 
     const bundle = await store.exportBundle();
     assert.ok(bundle.workflows.length > 0);
+    assert.equal(
+      bundle.workflows.find((item) => item.id === workflow.id).graph.layouts.sequence.positions.searchSuppliers.x,
+      1200
+    );
     assert.ok(bundle.profiles.some((item) => item.id === "operator-01"));
     assert.ok(bundle.registry.sites.some((site) => site.id === "custom-site"));
 

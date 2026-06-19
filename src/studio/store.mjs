@@ -93,6 +93,7 @@ export class StudioStore {
     const workflows = await this.listWorkflows();
     const now = this.clock().toISOString();
     const id = record.id || createId("workflow");
+    const existing = workflows.find((workflow) => workflow.id === id);
     const normalized = {
       id,
       name: record.name || record.workflow?.name || id,
@@ -104,7 +105,8 @@ export class StudioStore {
         context: {},
         driverConfig: {}
       },
-      createdAt: record.createdAt ?? now,
+      graph: normalizeWorkflowGraph(record.graph ?? existing?.graph ?? {}),
+      createdAt: existing?.createdAt ?? record.createdAt ?? now,
       updatedAt: now
     };
     const next = workflows.filter((workflow) => workflow.id !== id);
@@ -502,6 +504,37 @@ export class StudioStore {
 
 function createId(prefix) {
   return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 18)}`;
+}
+
+function normalizeWorkflowGraph(graph = {}) {
+  const layouts = {};
+  const rawLayouts = graph && typeof graph === "object" && graph.layouts && typeof graph.layouts === "object"
+    ? graph.layouts
+    : {};
+
+  for (const [layout, layoutRecord] of Object.entries(rawLayouts)) {
+    if (!layoutRecord || typeof layoutRecord !== "object") continue;
+    const positions = {};
+    const rawPositions = layoutRecord.positions && typeof layoutRecord.positions === "object"
+      ? layoutRecord.positions
+      : {};
+    for (const [nodeId, point] of Object.entries(rawPositions)) {
+      const x = Number(point?.x);
+      const y = Number(point?.y);
+      if (!nodeId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      positions[nodeId] = { x, y };
+    }
+    layouts[layout] = {
+      positions,
+      updatedAt: typeof layoutRecord.updatedAt === "string" ? layoutRecord.updatedAt : null
+    };
+  }
+
+  return {
+    version: 1,
+    layout: typeof graph?.layout === "string" ? graph.layout : "sequence",
+    layouts
+  };
 }
 
 function sanitizePathSegment(value) {

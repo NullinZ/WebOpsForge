@@ -76,17 +76,93 @@
               </div>
               <div class="button-row">
                 <button class="secondary" id="autoLayoutButton" type="button" data-i18n="autoLayout">Auto Layout</button>
+                <button class="primary" id="saveGraphWorkflowButton" type="button" data-i18n="save">Save</button>
               </div>
             </div>
             <div class="graph-toolbar">
+              <div class="graph-layout-switch" role="group" aria-label="Graph layout">
+                <button class="graph-layout-option" type="button" data-graph-layout="sequence" data-i18n="layoutSequence">Sequence</button>
+                <button class="graph-layout-option" type="button" data-graph-layout="grouped" data-i18n="layoutGrouped">Grouped</button>
+                <button class="graph-layout-option" type="button" data-graph-layout="compact" data-i18n="layoutCompact">Compact</button>
+              </div>
+              <span class="graph-zoom-level" id="graphZoomLevel">100%</span>
               <span class="graph-legend ready" data-i18n="legendIdle">idle</span>
               <span class="graph-legend running" data-i18n="legendRunning">running</span>
               <span class="graph-legend completed" data-i18n="legendCompleted">completed</span>
               <span class="graph-legend failed" data-i18n="legendFailed">failed</span>
             </div>
             <div id="workflowGraph" class="workflow-graph" aria-label="Workflow graph">
-              <svg id="graphEdges" class="graph-edges" aria-hidden="true"></svg>
-              <div id="graphNodeLayer" class="graph-node-layer"></div>
+              <div id="graphCanvas" class="graph-canvas">
+                <svg id="graphEdges" class="graph-edges" aria-hidden="true"></svg>
+                <div id="graphNodeLayer" class="graph-node-layer"></div>
+              </div>
+            </div>
+            <div class="node-editor" id="graphNodeEditor">
+              <div class="section-head compact">
+                <h2 data-i18n="nodeEditor">Node Editor</h2>
+                <span class="pill muted" id="nodeEditorKind">Node</span>
+              </div>
+              <div class="node-editor-empty" id="nodeEditorEmpty" data-i18n="nodeEditorEmpty">Select a node to edit it.</div>
+              <div class="node-editor-form" id="nodeEditorForm" hidden>
+                <div class="node-form-grid">
+                  <div>
+                    <label for="nodeEditorId" data-i18n="id">ID</label>
+                    <input id="nodeEditorId" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorAction" data-i18n="actionType">Action Type</label>
+                    <select id="nodeEditorAction">
+                      <option value="goto">goto</option>
+                      <option value="waitFor">waitFor</option>
+                      <option value="click">click</option>
+                      <option value="fill">fill</option>
+                      <option value="press">press</option>
+                      <option value="extract">extract</option>
+                      <option value="apiCall">apiCall</option>
+                      <option value="operation">operation</option>
+                      <option value="screenshot">screenshot</option>
+                      <option value="approval">approval</option>
+                      <option value="assertText">assertText</option>
+                      <option value="assertOutput">assertOutput</option>
+                      <option value="checkpoint">checkpoint</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="nodeEditorName" data-i18n="name">Name</label>
+                    <input id="nodeEditorName" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorSelector" data-i18n="selector">Selector</label>
+                    <input id="nodeEditorSelector" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorUrl" data-i18n="urlPattern">URL Pattern</label>
+                    <input id="nodeEditorUrl" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorValue" data-i18n="valueTemplate">Value Template</label>
+                    <input id="nodeEditorValue" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorKey" data-i18n="key">Key</label>
+                    <input id="nodeEditorKey" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorIncludes" data-i18n="includes">Includes</label>
+                    <input id="nodeEditorIncludes" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorMethod" data-i18n="method">Method</label>
+                    <input id="nodeEditorMethod" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="nodeEditorExtract" data-i18n="extract">Extract</label>
+                    <input id="nodeEditorExtract" autocomplete="off" />
+                  </div>
+                </div>
+                <label for="nodeEditorJson" data-i18n="definitionJson">Definition JSON</label>
+                <textarea id="nodeEditorJson" spellcheck="false"></textarea>
+              </div>
             </div>
           </div>
 
@@ -244,15 +320,15 @@
               <textarea id="operationModesJson" spellcheck="false"></textarea>
             </div>
             <div class="triple-editors">
-              <div>
+              <div data-run-pane="input">
                 <label for="runInputJson" data-i18n="input">Input</label>
                 <textarea id="runInputJson" spellcheck="false"></textarea>
               </div>
-              <div>
+              <div data-run-pane="context">
                 <label for="runContextJson" data-i18n="context">Context</label>
                 <textarea id="runContextJson" spellcheck="false"></textarea>
               </div>
-              <div>
+              <div data-run-pane="driver">
                 <label for="driverConfigJson" data-i18n="driver">Driver</label>
                 <textarea id="driverConfigJson" spellcheck="false"></textarea>
               </div>

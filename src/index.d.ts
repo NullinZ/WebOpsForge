@@ -177,6 +177,7 @@ export interface StudioWorkflowRecord {
   name: string;
   description: string;
   workflow: NormalizedWorkflow;
+  graph?: StudioWorkflowGraph;
   defaultRun?: {
     mode?: "dry-run" | "playwright" | string;
     profileId?: string | null;
@@ -186,6 +187,15 @@ export interface StudioWorkflowRecord {
   };
   createdAt: string;
   updatedAt: string;
+}
+
+export interface StudioWorkflowGraph {
+  version?: number;
+  layout?: string;
+  layouts?: Record<string, {
+    positions?: Record<string, { x: number; y: number }>;
+    updatedAt?: string | null;
+  }>;
 }
 
 export interface StudioRunRecord {
