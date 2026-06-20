@@ -312,6 +312,12 @@ const I18N = {
     resourceSaved: "Resource saved",
     retry: "Retry",
     retryQueued: "Retry queued",
+    runActivityCompleted: "Completed {step}",
+    runActivityFailed: "Failed {step}: {error}",
+    runActivityQueued: "Queued on {profile}",
+    runActivityRunning: "Running {step}",
+    runActivityStarting: "Starting {profile}; waiting for the first step event.",
+    runActivityIdle: "Select a run to inspect live activity.",
     runConfig: "Run Config",
     runQueued: "Run queued",
     runWorkflow: "Run Workflow",
@@ -432,6 +438,12 @@ const I18N = {
     resourceSaved: "资源已保存",
     retry: "重试",
     retryQueued: "重试已入队",
+    runActivityCompleted: "已完成 {step}",
+    runActivityFailed: "{step} 失败：{error}",
+    runActivityQueued: "已排队，Profile：{profile}",
+    runActivityRunning: "正在执行 {step}",
+    runActivityStarting: "正在启动 {profile}，等待第一个步骤事件。",
+    runActivityIdle: "选择一条运行记录查看实时活动。",
     runConfig: "运行配置",
     runQueued: "运行已入队",
     runWorkflow: "运行工作流",
@@ -589,6 +601,7 @@ const elements = {
   profileAccountSelector: document.querySelector("#profileAccountSelector"),
   profileRate: document.querySelector("#profileRate"),
   selectedRunStatus: document.querySelector("#selectedRunStatus"),
+  runActivity: document.querySelector("#runActivity"),
   runSummary: document.querySelector("#runSummary"),
   eventTimeline: document.querySelector("#eventTimeline"),
   artifactList: document.querySelector("#artifactList"),
@@ -667,6 +680,7 @@ async function refreshAll() {
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   if (!state.selectedRegistryId) selectDefaultRegistryItem();
   render();
+  if (!state.selectedRunId && state.runs[0]) await selectRun(state.runs[0].id);
 }
 
 async function loadRuntime() {
@@ -769,9 +783,10 @@ function renderRuns() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `run-row ${run.id === state.selectedRunId ? "active" : ""}`;
+    const profile = run.profileName || run.profileId || t("noProfile");
     button.innerHTML = `
       <span class="row-title">${escapeHtml(run.workflowName)}</span>
-      <span class="row-meta">${escapeHtml(statusLabel(run.status))} · ${escapeHtml(run.mode)} · ${formatTime(run.queuedAt)}</span>
+      <span class="row-meta">${escapeHtml(statusLabel(run.status))} · ${escapeHtml(run.mode)} · ${escapeHtml(profile)} · ${formatTime(run.queuedAt)}</span>
     `;
     button.addEventListener("click", () => selectRun(run.id));
     elements.runList.append(button);
@@ -1366,6 +1381,7 @@ function createGraphNode(step, { depth, topIndex, childIndex, branch, kind }) {
   return {
     id: step.id,
     action: step.action,
+    step,
     depth,
     topIndex,
     childIndex,
@@ -1976,6 +1992,12 @@ async function selectRun(id) {
 function renderRunDetail({ run, events, artifacts }) {
   elements.selectedRunStatus.textContent = statusLabel(run.status);
   elements.selectedRunStatus.className = `pill ${statusClass(run.status)}`;
+  const activity = summarizeRunActivity(run, events);
+  elements.runActivity.className = `run-activity ${statusClass(run.status) || "muted"}`;
+  elements.runActivity.innerHTML = `
+    <strong>${escapeHtml(activity.title)}</strong>
+    <span>${escapeHtml(activity.detail)}</span>
+  `;
   elements.runSummary.textContent = formatJson({
     id: run.id,
     status: run.status,
@@ -1997,7 +2019,7 @@ function renderRunDetail({ run, events, artifacts }) {
       : "";
     row.innerHTML = `
       <strong>${escapeHtml(event.type)}${event.stepId ? ` · ${escapeHtml(event.stepId)}` : ""}</strong>
-      <span class="event-meta">${escapeHtml(event.action ?? event.workflow?.name ?? "")} ${artifactLink}</span>
+      <span class="event-meta">${escapeHtml(eventDetail(event, run))} ${artifactLink}</span>
     `;
     elements.eventTimeline.append(row);
   }
@@ -2015,6 +2037,88 @@ function renderRunDetail({ run, events, artifacts }) {
     `;
     elements.artifactList.append(row);
   }
+}
+
+function summarizeRunActivity(run, events = []) {
+  const latestStepEvent = [...events].reverse().find((event) => event.stepId);
+  const profile = run.profileName || run.profileId || t("noProfile");
+  if (!latestStepEvent) {
+    return {
+      title: statusLabel(run.status),
+      detail: run.status === "queued"
+        ? t("runActivityQueued", { profile })
+        : run.status === "running" || run.status === "cancel_requested"
+          ? t("runActivityStarting", { profile })
+          : t("runActivityIdle")
+    };
+  }
+
+  const step = findWorkflowStep(run.workflowId, latestStepEvent.stepId);
+  const stepText = describeStep(latestStepEvent, step);
+  if (run.status === "failed" || latestStepEvent.type === "step.failed") {
+    return {
+      title: statusLabel("failed"),
+      detail: t("runActivityFailed", {
+        step: stepText,
+        error: cleanErrorMessage(latestStepEvent.error?.message ?? run.error?.message ?? "")
+      })
+    };
+  }
+  if (run.status === "completed") {
+    return {
+      title: statusLabel("completed"),
+      detail: t("runActivityCompleted", { step: stepText })
+    };
+  }
+  return {
+    title: statusLabel(run.status),
+    detail: t("runActivityRunning", { step: stepText })
+  };
+}
+
+function eventDetail(event, run = null) {
+  const step = event.stepId ? findWorkflowStep(run?.workflowId, event.stepId) : null;
+  const parts = [];
+  if (event.action ?? step?.action) parts.push(event.action ?? step.action);
+  const target = stepTarget(step);
+  if (target) parts.push(target);
+  if (event.error?.message) parts.push(cleanErrorMessage(event.error.message));
+  if (event.result?.url) parts.push(event.result.url);
+  if (event.workflow?.name) parts.push(event.workflow.name);
+  return parts.join(" · ");
+}
+
+function describeStep(event, step) {
+  const parts = [event.stepId ?? step?.id ?? event.action ?? "step"];
+  if (event.action ?? step?.action) parts.push(event.action ?? step.action);
+  const target = stepTarget(step);
+  if (target) parts.push(target);
+  return parts.join(" · ");
+}
+
+function stepTarget(step) {
+  if (!step) return "";
+  return step.url ?? step.selector ?? step.name ?? step.key ?? step.includes ?? "";
+}
+
+function cleanErrorMessage(message) {
+  return String(message ?? "").replace(/\u001b\[[0-9;]*m/g, "").trim();
+}
+
+function findWorkflowStep(workflowId, stepId) {
+  const workflow = state.workflows.find((item) => item.id === workflowId);
+  const graph = workflow ? buildGraphData(workflow.workflow) : null;
+  return graph?.nodes.find((node) => node.id === stepId)?.step ?? findRawStep(workflow?.workflow?.steps, stepId);
+}
+
+function findRawStep(steps = [], stepId) {
+  for (const step of steps) {
+    if (step.id === stepId) return step;
+    const browserStep = findRawStep(step.browserSteps ?? [], stepId);
+    if (browserStep) return browserStep;
+    if (step.api?.id === stepId) return step.api;
+  }
+  return null;
 }
 
 function renderAudit() {

@@ -1020,6 +1020,51 @@ h2 {
   margin-bottom: 10px;
 }
 
+.run-activity {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #c9d7ff;
+  border-radius: 6px;
+  color: var(--accent);
+  background: #f3f6ff;
+}
+
+.run-activity.success {
+  color: var(--success);
+  border-color: #bde6ce;
+  background: #f3fbf6;
+}
+
+.run-activity.warning {
+  color: var(--warning);
+  border-color: #efd49a;
+  background: #fff9ed;
+}
+
+.run-activity.danger {
+  color: var(--danger);
+  border-color: #efc4c7;
+  background: #fff5f5;
+}
+
+.run-activity.muted {
+  color: var(--muted);
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.run-activity strong,
+.run-activity span {
+  overflow-wrap: anywhere;
+}
+
+.run-activity span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .event-row {
   display: grid;
   gap: 6px;
