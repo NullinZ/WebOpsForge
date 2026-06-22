@@ -4,6 +4,7 @@ const state = {
   runs: [],
   audit: [],
   pickerEvents: [],
+  pickerSession: null,
   selectedPickerEventId: null,
   selectedWorkflowId: null,
   selectedProfileId: null,
@@ -25,6 +26,9 @@ const state = {
   graphLayout: localStorage.getItem("webops-forge-graph-layout") || "sequence",
   graphViewportCenterKey: null,
   selectedGraphNodeId: null,
+  pendingPickerNodeId: null,
+  pendingPickerStartedAt: null,
+  pickerPanelExpanded: false,
   nodeEditorSyncing: false,
   resizeDrag: null,
   polling: null
@@ -304,6 +308,13 @@ const I18N = {
     page: "Page",
     pageRegistry: "Page Registry",
     pages: "Pages",
+    pickNode: "Pick Node",
+    pickerNoTargetUrl: "Picker node added, but no target URL was found. Add or select a goto step first.",
+    pickerTargetActive: "Target: {url}",
+    pickerWaiting: "Picker node added. Open the Chrome picker when you are on the page to pick.",
+    pickerAutoApplied: "Picked element applied to the new node.",
+    showPickerPanel: "Show picker panel",
+    hidePickerPanel: "Hide picker panel",
     platform: "Platform",
     profile: "Profile",
     profileDetails: "Profile Details",
@@ -439,6 +450,13 @@ const I18N = {
     page: "页面",
     pageRegistry: "页面注册",
     pages: "页面",
+    pickNode: "拾取节点",
+    pickerNoTargetUrl: "已新增拾取节点，但没有找到目标网址。请先添加或选中 goto 节点。",
+    pickerTargetActive: "目标页：{url}",
+    pickerWaiting: "已新增拾取节点，切到要拾取的网页后手动打开 Chrome 拾取器。",
+    pickerAutoApplied: "已把拾取元素应用到新节点。",
+    showPickerPanel: "展开拾取面板",
+    hidePickerPanel: "收起拾取面板",
     platform: "平台",
     profile: "Profile",
     profileDetails: "Profile 详情",
@@ -541,6 +559,272 @@ const STATUS_LABELS = {
   }
 };
 
+const ACTION_LABELS = {
+  en: {
+    apiCall: "API call",
+    approval: "Approval",
+    assertOutput: "Assert output",
+    assertText: "Assert text",
+    checkpoint: "Checkpoint",
+    click: "Click",
+    extract: "Extract",
+    fill: "Fill",
+    goto: "Open URL",
+    operation: "Operation",
+    press: "Press key",
+    screenshot: "Screenshot",
+    waitFor: "Wait for element"
+  },
+  zh: {
+    apiCall: "API 调用",
+    approval: "审批",
+    assertOutput: "校验输出",
+    assertText: "校验文本",
+    checkpoint: "检查点",
+    click: "点击",
+    extract: "提取",
+    fill: "输入",
+    goto: "打开网址",
+    operation: "业务操作",
+    press: "按键",
+    screenshot: "截图",
+    waitFor: "等待元素"
+  }
+};
+
+const ACTION_PICKER_VALUES = {
+  nodeEditorAction: [
+    "goto",
+    "waitFor",
+    "click",
+    "fill",
+    "press",
+    "extract",
+    "apiCall",
+    "operation",
+    "screenshot",
+    "approval",
+    "assertText",
+    "assertOutput",
+    "checkpoint"
+  ],
+  registryItemActionType: [
+    "goto",
+    "waitFor",
+    "click",
+    "fill",
+    "press",
+    "extract",
+    "screenshot",
+    "apiCall",
+    "approval"
+  ]
+};
+
+const FIELD_HELP = {
+  workflowName: {
+    zh: { title: "工作流名称", body: "给人看的名称，出现在左侧列表、运行记录和导出包里。来源于你当前编辑的 workflow record，不影响执行 id。" },
+    en: { title: "Workflow name", body: "Human-readable name shown in lists, runs, and exports. It comes from the Studio workflow record and does not change execution ids." }
+  },
+  workflowId: {
+    zh: { title: "工作流 ID", body: "稳定保存键，用于 /api/workflows、运行记录和本地 JSON 存储。保存后尽量不要频繁改名。" },
+    en: { title: "Workflow ID", body: "Stable storage key used by /api/workflows, runs, and local JSON files. Avoid renaming after saved runs exist." }
+  },
+  workflowDescription: {
+    zh: { title: "说明", body: "描述这个工作流解决什么业务任务，方便团队和后续维护识别用途。" },
+    en: { title: "Description", body: "Explains the business task this workflow handles, making it easier to maintain and share." }
+  },
+  nodeEditorId: {
+    zh: { title: "节点 ID", body: "执行和连线使用的稳定 step id。浏览器子步骤会保留 parent.child 命名空间，避免和同名节点冲突。" },
+    en: { title: "Node ID", body: "Stable step id used by execution and graph links. Browser child steps keep the parent.child namespace to avoid collisions." }
+  },
+  nodeEditorAction: {
+    zh: { title: "动作类型", body: "决定节点执行行为。菜单显示中英文，实际保存仍是稳定 code，例如 click、fill、goto。" },
+    en: { title: "Action type", body: "Controls what the step does. The menu is bilingual, while the saved value remains a stable code such as click, fill, or goto." }
+  },
+  nodeEditorName: {
+    zh: { title: "名称", body: "可选的人类可读别名。提取、截图、审批等节点会用它作为输出名或展示名。" },
+    en: { title: "Name", body: "Optional human-readable alias. Extract, screenshot, and approval steps use it as an output or display name." }
+  },
+  nodeEditorSelector: {
+    zh: { title: "选择器", body: "页面目标元素定位方式。可手填，也可由浏览器拾取器写入；运行时会结合 targetIdentity 防止点错元素。" },
+    en: { title: "Selector", body: "Locates the target page element. Fill manually or from the picker; runtime uses targetIdentity to avoid wrong matches." }
+  },
+  nodeEditorUrl: {
+    zh: { title: "URL 模式", body: "goto 节点打开的页面，或用于推导拾取器目标网址。支持完整 http/https 地址。" },
+    en: { title: "URL pattern", body: "The page opened by a goto step, and the source used to scope the picker target URL. Use full http/https URLs." }
+  },
+  nodeEditorValue: {
+    zh: { title: "值模板", body: "fill、apiCall 等动作使用的输入值。可引用模板变量，例如 {{input.query}}。" },
+    en: { title: "Value template", body: "Input value for actions such as fill or apiCall. Template variables like {{input.query}} are supported." }
+  },
+  nodeEditorKey: {
+    zh: { title: "按键", body: "press 动作发送的键名，例如 Enter、Escape、Tab。使用 Playwright 兼容的键名。" },
+    en: { title: "Key", body: "Keyboard key sent by a press action, such as Enter, Escape, or Tab. Use Playwright-compatible key names." }
+  },
+  nodeEditorIncludes: {
+    zh: { title: "包含文本", body: "assertText 或 assertOutput 的校验条件，用于阻止错误结果继续执行。" },
+    en: { title: "Includes", body: "Expected text for assertText or assertOutput, used to block unsafe or incorrect results." }
+  },
+  nodeEditorMethod: {
+    zh: { title: "请求方法", body: "apiCall 使用的 HTTP 方法，例如 GET、POST、PUT。浏览器动作通常不需要填写。" },
+    en: { title: "Method", body: "HTTP method for apiCall steps, such as GET, POST, or PUT. Browser actions usually leave this empty." }
+  },
+  nodeEditorExtract: {
+    zh: { title: "提取路径", body: "apiCall 响应提取路径，例如 json.title。浏览器 extract 节点通常使用 selector 和 name。" },
+    en: { title: "Extract path", body: "Response extraction path for apiCall, such as json.title. Browser extract steps usually use selector and name." }
+  },
+  nodeEditorJson: {
+    zh: { title: "节点 JSON", body: "当前节点的完整配置。适合高级编辑；字段编辑区会和这里同步。" },
+    en: { title: "Node JSON", body: "Complete configuration for the selected node. Use for advanced edits; the form fields sync with it." }
+  },
+  workflowJson: {
+    zh: { title: "工作流 JSON", body: "完整 workflow 定义。图谱、节点编辑器和运行配置最终都会保存到这里。" },
+    en: { title: "Workflow JSON", body: "Full workflow definition. The graph, node editor, and run config ultimately save into this structure." }
+  },
+  registryItemId: {
+    zh: { title: "资源 ID", body: "注册中心资源的稳定 key。站点、页面、动作和业务操作都会用它互相关联。" },
+    en: { title: "Resource ID", body: "Stable key for registry resources. Sites, pages, actions, and operations reference each other by this id." }
+  },
+  registryItemName: {
+    zh: { title: "资源名称", body: "给操作者看的名称，出现在注册中心列表和生成工作流时的标题中。" },
+    en: { title: "Resource name", body: "Human-readable name shown in registry lists and generated workflow titles." }
+  },
+  registryItemStatus: {
+    zh: { title: "状态", body: "标记资源是否草稿、就绪或弃用。不会自动阻止保存，但会影响团队判断可用性。" },
+    en: { title: "Status", body: "Marks whether a resource is draft, ready, or deprecated. It does not block saving, but signals readiness." }
+  },
+  registryItemSite: {
+    zh: { title: "站点", body: "当前页面、动作或业务操作所属的平台/域名资源。来源于注册中心 Sites。" },
+    en: { title: "Site", body: "Platform or domain resource that owns this page, action, or operation. Sourced from Registry Sites." }
+  },
+  registryItemPage: {
+    zh: { title: "页面", body: "动作所属页面。用于把 selector、URL 模式和业务动作归到同一个页面上下文。" },
+    en: { title: "Page", body: "Page context for an action. It groups selectors, URL patterns, and actions under one page." }
+  },
+  registryItemActionType: {
+    zh: { title: "动作类型", body: "注册动作生成节点时使用的行为类型。菜单双语显示，保存值仍是稳定 action code。" },
+    en: { title: "Action type", body: "Behavior used when this registry action becomes a workflow step. The menu is bilingual; saved value is a stable action code." }
+  },
+  registryItemBaseUrl: {
+    zh: { title: "基础地址", body: "站点的默认入口 URL。页面和动作没有更具体 URL 时会用它作为回退。" },
+    en: { title: "Base URL", body: "Default entry URL for a site. Pages and actions fall back to it when no specific URL is set." }
+  },
+  registryItemUrlPattern: {
+    zh: { title: "URL 模式", body: "页面匹配或打开地址。动作生成 goto 节点、拾取器目标页推导都会参考它。" },
+    en: { title: "URL pattern", body: "Page URL or matching pattern. Used for generated goto steps and picker target inference." }
+  },
+  registryItemSelector: {
+    zh: { title: "选择器", body: "页面动作的目标元素。可来自手写、DevTools 或浏览器拾取器生成的稳定 selector。" },
+    en: { title: "Selector", body: "Target element for a page action. It may come from manual entry, DevTools, or the stable picker selector." }
+  },
+  registryItemValueTemplate: {
+    zh: { title: "值模板", body: "动作输入或 API URL 模板。常用 {{input.xxx}} 引用运行输入。" },
+    en: { title: "Value template", body: "Action input or API URL template. Commonly references run input with {{input.xxx}}." }
+  },
+  registryItemOutputName: {
+    zh: { title: "输出名", body: "提取、截图或审批节点写入 outputs/artifacts 时使用的名称。" },
+    en: { title: "Output name", body: "Name used when extract, screenshot, or approval steps write outputs or artifacts." }
+  },
+  registryItemTags: {
+    zh: { title: "标签", body: "用于分类和检索注册资源。多个标签可用逗号分隔。" },
+    en: { title: "Tags", body: "Used to group and search registry resources. Separate multiple tags with commas." }
+  },
+  registryItemDescription: {
+    zh: { title: "资源说明", body: "说明这个资源的业务语义、适用页面或使用限制。" },
+    en: { title: "Resource description", body: "Explains the resource purpose, applicable page, or usage constraints." }
+  },
+  registryItemActionIds: {
+    zh: { title: "动作 ID 列表", body: "业务操作包含的注册动作，一行一个或逗号分隔。来源于 Registry Actions。" },
+    en: { title: "Action IDs", body: "Registry actions included in an operation. Use one per line or comma-separated values." }
+  },
+  registryItemDefinitionJson: {
+    zh: { title: "定义 JSON", body: "资源的高级扩展配置，例如显式 step、API 分支或平台备注。" },
+    en: { title: "Definition JSON", body: "Advanced extension config, such as explicit steps, API branches, or platform notes." }
+  },
+  registryItemSchemaJson: {
+    zh: { title: "结构 JSON", body: "业务操作的输入/输出 schema 和 workflowTemplate。用于生成工作流和样例输入。" },
+    en: { title: "Schema JSON", body: "Operation input/output schema and workflowTemplate, used to generate workflows and sample inputs." }
+  },
+  runMode: {
+    zh: { title: "运行模式", body: "dry-run 使用模拟数据验证逻辑；playwright 会启动真实浏览器执行。" },
+    en: { title: "Run mode", body: "dry-run validates logic with fixtures; playwright runs in a real browser." }
+  },
+  profileSelect: {
+    zh: { title: "Profile", body: "选择运行使用的浏览器身份、登录态或 dry-run profile。来源于左侧 Profiles。" },
+    en: { title: "Profile", body: "Browser identity, login state, or dry-run profile used for execution. Sourced from Profiles." }
+  },
+  approvalToggle: {
+    zh: { title: "审批闸口", body: "运行前如何处理 approval 节点。可使用上下文、全部通过或阻断示例审批。" },
+    en: { title: "Approval gates", body: "How approval steps are handled before a run: use context, approve all, or block sample gates." }
+  },
+  operationModesJson: {
+    zh: { title: "动作执行方式", body: "控制 operation 使用 browser 分支还是 api 分支。key 是 operation step id。" },
+    en: { title: "Operation modes", body: "Controls whether each operation uses the browser or API branch. Keys are operation step ids." }
+  },
+  runInputJson: {
+    zh: { title: "输入 JSON", body: "运行输入数据。工作流里可通过 {{input.xxx}} 引用这些值。" },
+    en: { title: "Input JSON", body: "Run input data. Workflow templates can reference values with {{input.xxx}}." }
+  },
+  runContextJson: {
+    zh: { title: "上下文 JSON", body: "运行上下文，例如 approvals、operationModes、账号信息等控制项。" },
+    en: { title: "Context JSON", body: "Run context such as approvals, operationModes, account hints, and control flags." }
+  },
+  driverConfigJson: {
+    zh: { title: "Driver 配置", body: "dry-run fixture、浏览器配置和执行器参数。真实 Playwright 运行可在这里传 driverConfig。" },
+    en: { title: "Driver config", body: "Dry-run fixtures, browser config, and driver options. Real Playwright runs can receive driverConfig here." }
+  },
+  profileId: {
+    zh: { title: "Profile ID", body: "Profile 的稳定 key，用于工作流默认运行配置和运行记录关联。" },
+    en: { title: "Profile ID", body: "Stable profile key referenced by workflow defaults and run records." }
+  },
+  profileName: {
+    zh: { title: "Profile 名称", body: "给操作者看的身份名称，出现在 Profile 列表和运行记录中。" },
+    en: { title: "Profile name", body: "Human-readable identity name shown in profile lists and run records." }
+  },
+  profileMode: {
+    zh: { title: "Profile 模式", body: "这个 profile 用于 dry-run 还是真实 Playwright 浏览器。" },
+    en: { title: "Profile mode", body: "Whether this profile is used for dry-run fixtures or real Playwright browser runs." }
+  },
+  profilePlatform: {
+    zh: { title: "平台", body: "账号或站点归属，例如 douyin、1688、example.local。用于识别登录态和运行上下文。" },
+    en: { title: "Platform", body: "Account or site platform such as douyin, 1688, or example.local. Used for session and run context." }
+  },
+  profileAccountLabel: {
+    zh: { title: "账号标签", body: "可读账号标识，不保存密码。用于区分多个登录身份。" },
+    en: { title: "Account label", body: "Readable account identifier, not a password. Used to distinguish logged-in identities." }
+  },
+  profileLoginState: {
+    zh: { title: "登录状态", body: "记录最近一次会话检查结果：未检查、已登录、未登录或未知。" },
+    en: { title: "Login state", body: "Last session check result: unchecked, authenticated, logged out, or unknown." }
+  },
+  profileStatus: {
+    zh: { title: "Profile 状态", body: "控制 profile 是否可用于排队运行。busy 表示当前被运行占用。" },
+    en: { title: "Profile status", body: "Controls whether the profile can be used for queued runs. busy means it is currently leased." }
+  },
+  profileDir: {
+    zh: { title: "Profile 目录", body: "真实浏览器用户数据目录。用于复用登录态，必须是本机安全路径。" },
+    en: { title: "Profile directory", body: "Real browser user-data directory. Used to reuse login state and should be a safe local path." }
+  },
+  profileCheckUrl: {
+    zh: { title: "会话检查 URL", body: "检查登录态时打开的页面。通常是平台首页或后台页。" },
+    en: { title: "Session check URL", body: "Page opened to check login state. Usually a platform home or workspace page." }
+  },
+  profileAccountSelector: {
+    zh: { title: "账号选择器", body: "会话检查时读取账号名的 selector。命中后可更新 accountLabel。" },
+    en: { title: "Account selector", body: "Selector used during session checks to read the account label when logged in." }
+  },
+  profileRate: {
+    zh: { title: "频率限制", body: "每分钟最大动作数。留空或 0 表示不限制，由工作流自身节奏控制。" },
+    en: { title: "Rate limit", body: "Maximum actions per minute. Empty or 0 means no explicit limit beyond workflow timing." }
+  }
+};
+
+const BRANCH_LABELS = {
+  en: { api: "API", browser: "Browser" },
+  zh: { api: "API", browser: "浏览器" }
+};
+
 const REGISTRY_SECTIONS = [
   { id: "sites", labelKey: "sites", detailKey: "siteRegistry" },
   { id: "pages", labelKey: "pages", detailKey: "pageRegistry" },
@@ -596,6 +880,8 @@ const elements = {
   nodeEditorSelector: document.querySelector("#nodeEditorSelector"),
   refreshPickerButton: document.querySelector("#refreshPickerButton"),
   applyLatestPickButton: document.querySelector("#applyLatestPickButton"),
+  nodePickerPanel: document.querySelector("#nodePickerPanel"),
+  togglePickerPanelButton: document.querySelector("#togglePickerPanelButton"),
   latestPickerStatus: document.querySelector("#latestPickerStatus"),
   pickerEventList: document.querySelector("#pickerEventList"),
   nodeEditorUrl: document.querySelector("#nodeEditorUrl"),
@@ -635,6 +921,8 @@ const elements = {
 };
 
 setupResizableLayouts();
+setupActionPickers();
+setupFieldHelps();
 
 elements.languageToggle.addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
 document.querySelector("#autoLayoutButton").addEventListener("click", () => autoLayoutSelectedWorkflow());
@@ -648,21 +936,41 @@ document.querySelector("#saveWorkflowButton").addEventListener("click", () => sa
 document.querySelector("#validateWorkflowButton").addEventListener("click", () => validateSelectedWorkflow());
 document.querySelector("#newWorkflowButton").addEventListener("click", () => createBlankWorkflow());
 document.querySelector("#addGraphNodeButton").addEventListener("click", () => addGraphNode());
+document.querySelector("#addPickerNodeButton").addEventListener("click", (event) => {
+  event.stopPropagation();
+  setPickerPanelExpanded(true);
+  addPickerGraphNode().catch((error) => showToast(error.message));
+});
 elements.refreshPickerButton.addEventListener("click", async () => {
-  await loadPickerEvents();
+  setPickerPanelExpanded(true);
+  await Promise.all([loadPickerEvents(), loadPickerSession()]);
+  applyPendingPickerEventIfReady();
   renderPickerPanel();
 });
-elements.applyLatestPickButton.addEventListener("click", () => applyPickerEventToSelectedNode(state.pickerEvents[0]?.id));
+elements.applyLatestPickButton.addEventListener("click", () => {
+  applyPickerEventToSelectedNode(state.pickerEvents[0]?.id);
+  setPickerPanelExpanded(false);
+});
+elements.togglePickerPanelButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setPickerPanelExpanded(!state.pickerPanelExpanded);
+});
 elements.pickerEventList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-picker-apply]");
   if (button) {
     applyPickerEventToSelectedNode(button.dataset.pickerApply);
+    setPickerPanelExpanded(false);
     return;
   }
   const row = event.target.closest("[data-picker-id]");
   if (!row) return;
   state.selectedPickerEventId = row.dataset.pickerId;
   renderPickerPanel();
+});
+document.addEventListener("click", (event) => {
+  if (!state.pickerPanelExpanded) return;
+  if (event.target.closest("#nodePickerPanel, #addPickerNodeButton, #refreshPickerButton, #applyLatestPickButton")) return;
+  setPickerPanelExpanded(false);
 });
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
@@ -708,6 +1016,15 @@ document.addEventListener("pointercancel", () => {
   endGraphInteraction();
 });
 document.addEventListener("mouseup", () => endGraphPan());
+document.addEventListener("click", (event) => {
+  closeActionPickers(event.target);
+  closeFieldHelps(event.target);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeActionPickers();
+  closeFieldHelps();
+});
 updateGraphLayoutButtons();
 updateGraphZoomLabel();
 
@@ -716,7 +1033,7 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit(), loadPickerEvents()]);
+  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   if (!state.selectedRegistryId) selectDefaultRegistryItem();
@@ -759,6 +1076,11 @@ async function loadPickerEvents() {
   if (!state.selectedPickerEventId && state.pickerEvents[0]) {
     state.selectedPickerEventId = state.pickerEvents[0].id;
   }
+}
+
+async function loadPickerSession() {
+  const data = await api("/api/picker/session");
+  state.pickerSession = data.session ?? null;
 }
 
 function render() {
@@ -1126,7 +1448,7 @@ function renderGraph() {
     item.style.top = `${position.y}px`;
     item.innerHTML = `
       <div class="node-head">
-        <span class="node-action">${escapeHtml(node.action)}</span>
+        <span class="node-action">${actionLabelHtml(node.action)}</span>
         <span class="node-status">${escapeHtml(statusLabel(status))}</span>
       </div>
       <strong>${escapeHtml(node.label)}</strong>
@@ -1218,6 +1540,7 @@ function renderGraphNodeEditor() {
       const value = readNodeEditorField(match.step, field);
       if (control.tagName === "SELECT") ensureSelectOption(control, value);
       control.value = value;
+      if (isActionPickerInput(control)) syncActionPicker(control);
       control.classList.remove("invalid");
     }
     elements.nodeEditorJson.value = formatJson(match.step);
@@ -1228,14 +1551,27 @@ function renderGraphNodeEditor() {
   }
 }
 
+function setPickerPanelExpanded(expanded) {
+  state.pickerPanelExpanded = Boolean(expanded);
+  renderPickerPanel();
+}
+
 function renderPickerPanel() {
   if (!elements.pickerEventList) return;
   const hasSelection = Boolean(state.selectedGraphNodeId && findWorkflowNode(currentWorkflowRecord()?.workflow, state.selectedGraphNodeId));
+  if (!hasSelection) state.pickerPanelExpanded = false;
+  elements.nodePickerPanel.classList.toggle("expanded", state.pickerPanelExpanded);
+  elements.pickerEventList.hidden = !state.pickerPanelExpanded;
+  elements.togglePickerPanelButton.setAttribute("aria-expanded", String(state.pickerPanelExpanded));
+  elements.togglePickerPanelButton.setAttribute("aria-label", t(state.pickerPanelExpanded ? "hidePickerPanel" : "showPickerPanel"));
   elements.applyLatestPickButton.disabled = !hasSelection || !state.pickerEvents.length;
   const latest = state.pickerEvents[0] ?? null;
-  elements.latestPickerStatus.textContent = latest
-    ? `${latest.confidence ?? 0}% · ${latest.recommendedSelector || "-"}`
-    : t("noPicks");
+  const activeTargetUrl = state.pickerSession?.targetUrl || state.pickerSession?.allowedUrls?.[0] || "";
+  elements.latestPickerStatus.textContent = activeTargetUrl
+    ? t("pickerTargetActive", { url: shorten(activeTargetUrl, 56) })
+    : latest
+      ? `${latest.confidence ?? 0}% · ${latest.recommendedSelector || "-"}`
+      : t("noPicks");
   elements.pickerEventList.innerHTML = "";
 
   if (!state.pickerEvents.length) {
@@ -1259,7 +1595,7 @@ function renderPickerPanel() {
       </div>
       <div class="picker-event-meta">
         <span>${escapeHtml(t("confidence"))}: ${escapeHtml(String(pickerEvent.confidence ?? 0))}%</span>
-        <span>${escapeHtml(pickerEvent.suggestedAction || "click")}</span>
+        <span>${escapeHtml(actionLabel(pickerEvent.suggestedAction || "click"))}</span>
         <span>${escapeHtml(matchInfo)}</span>
         <button class="compact-button" type="button" data-picker-apply="${escapeHtml(pickerEvent.id)}">${escapeHtml(t("apply"))}</button>
       </div>
@@ -1268,7 +1604,7 @@ function renderPickerPanel() {
   }
 }
 
-function applyPickerEventToSelectedNode(pickerEventId) {
+function applyPickerEventToSelectedNode(pickerEventId, { toastKey = "selectedPickApplied" } = {}) {
   if (!pickerEventId || !state.selectedGraphNodeId) return;
   const pickerEvent = state.pickerEvents.find((item) => item.id === pickerEventId);
   if (!pickerEvent) return;
@@ -1289,12 +1625,103 @@ function applyPickerEventToSelectedNode(pickerEventId) {
   if (match.step.action === "press" && !match.step.key) {
     match.step.key = "Enter";
   }
+  if (isPickerPlaceholderId(previousId)) {
+    const nextIdBase = pickerEventStepIdBase(previousId, pickerEvent, match.step.action);
+    if (nextIdBase) {
+      match.step.id = uniqueWorkflowStepId(workflow, nextIdBase, { excludeId: previousId });
+    }
+  }
   match.step.targetIdentity = pickerEvent.targetIdentity;
   match.step.selectorCandidates = pickerEvent.selectorCandidates ?? [];
   match.step.pickedFrom = pickerEvent.pickedFrom;
   state.selectedPickerEventId = pickerEvent.id;
   commitGraphNodeEdit(workflow, previousId, String(match.step.id ?? previousId));
-  showToast(t("selectedPickApplied"));
+  showToast(t(toastKey));
+}
+
+async function publishPickerSession(step, allowedUrls, startedAt) {
+  try {
+    const workflowRecord = currentWorkflowRecord();
+    const data = await api("/api/picker/session", {
+      method: "POST",
+      body: {
+        workflowId: state.selectedWorkflowId,
+        workflowName: workflowRecord?.name ?? "",
+        nodeId: step.id,
+        nodeLabel: step.name || step.label || step.id,
+        targetUrl: allowedUrls[0] ?? "",
+        allowedUrls,
+        startedAt
+      }
+    });
+    state.pickerSession = data.session ?? null;
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function clearPickerSession(reason = "cleared") {
+  try {
+    const data = await api("/api/picker/session", {
+      method: "DELETE",
+      body: {
+        sessionId: state.pickerSession?.id ?? null,
+        reason
+      }
+    });
+    state.pickerSession = data.session ?? null;
+  } catch (_) {
+    state.pickerSession = null;
+  }
+}
+
+function resolvePickerTargetUrls(workflow, match) {
+  const urls = [];
+  const steps = Array.isArray(workflow?.steps) ? workflow.steps : [];
+  const addUrl = (url) => {
+    const value = typeof url === "string" ? url.trim() : "";
+    if (!/^https?:\/\//i.test(value) || urls.includes(value)) return;
+    urls.push(value);
+  };
+
+  if (match?.kind === "browser") {
+    const branch = steps[match.topIndex]?.browserSteps ?? [];
+    for (let index = match.childIndex; index >= 0; index -= 1) {
+      if (branch[index]?.action === "goto") {
+        addUrl(branch[index].url);
+        break;
+      }
+    }
+    for (const child of branch) {
+      if (child?.action === "goto") addUrl(child.url);
+    }
+  } else if (match?.kind === "main") {
+    if (match.step?.action === "goto") addUrl(match.step.url);
+    for (let index = match.topIndex; index >= 0; index -= 1) {
+      collectStepGotoUrls(steps[index], addUrl, { reverseChildren: true });
+    }
+  } else if (match?.kind === "api") {
+    collectStepGotoUrls(steps[match.topIndex], addUrl, { reverseChildren: true });
+  }
+
+  if (!urls.length) {
+    for (const step of steps) {
+      collectStepGotoUrls(step, addUrl);
+      if (urls.length) break;
+    }
+  }
+
+  return urls.slice(0, 5);
+}
+
+function collectStepGotoUrls(step, addUrl, { reverseChildren = false } = {}) {
+  if (!step || typeof step !== "object") return;
+  if (step.action === "goto") addUrl(step.url);
+  const children = Array.isArray(step.browserSteps) ? step.browserSteps : [];
+  const iterable = reverseChildren ? [...children].reverse() : children;
+  for (const child of iterable) {
+    collectStepGotoUrls(child, addUrl, { reverseChildren });
+  }
 }
 
 function addGraphNode() {
@@ -1313,14 +1740,69 @@ function addGraphNode() {
   showToast(t("nodeAdded"));
 }
 
-function createGraphNodeStep(workflow, match) {
+async function addPickerGraphNode() {
+  const workflow = readWorkflowDraft();
+  if (!workflow || !Array.isArray(workflow.steps)) return;
+
+  const match = state.selectedGraphNodeId ? findWorkflowNode(workflow, state.selectedGraphNodeId) : null;
+  const startedAt = new Date().toISOString();
+  const allowedUrls = resolvePickerTargetUrls(workflow, match);
+  const newStep = createGraphNodeStep(workflow, match, {
+    base: "pick-target",
+    action: "click",
+    label: "Pick target",
+    selector: "",
+    pickerRequest: {
+      status: "waiting",
+      startedAt,
+      targetUrl: allowedUrls[0] ?? "",
+      allowedUrls
+    }
+  });
+  insertGraphNodeStep(workflow, match, newStep);
+
+  state.selectedGraphNodeId = newStep.id;
+  state.pendingPickerNodeId = newStep.id;
+  state.pendingPickerStartedAt = startedAt;
+  commitWorkflowDraft(workflow);
+  if (state.selectedWorkflowId) saveGraphPositions(state.selectedWorkflowId, state.graphPositions);
+  renderGraph();
+  revealGraphNodeEditor();
+  if (allowedUrls.length) {
+    await publishPickerSession(newStep, allowedUrls, startedAt);
+    showToast(t("pickerWaiting", { url: shorten(allowedUrls[0], 60) }));
+  } else {
+    await clearPickerSession("missing_target_url");
+    showToast(t("pickerNoTargetUrl"));
+  }
+}
+
+function createGraphNodeStep(workflow, match, overrides = {}) {
   const topLevel = match?.kind !== "browser";
-  const base = topLevel ? "next-step" : `${workflow.steps?.[match.topIndex]?.id ?? "operation"}.next-step`;
+  const requestedBase = overrides.base || "next-step";
+  const base = topLevel
+    ? sanitizeWorkflowStepIdSegment(requestedBase) || "next-step"
+    : scopedBrowserStepIdBase(workflow, match, requestedBase);
   return {
     id: uniqueWorkflowStepId(workflow, base),
-    action: "checkpoint",
-    label: topLevel ? "Next step" : "Next browser step"
+    action: overrides.action || "checkpoint",
+    label: overrides.label || (topLevel ? "Next step" : "Next browser step"),
+    ...(overrides.selector != null ? { selector: overrides.selector } : {}),
+    ...(overrides.pickerRequest ? { pickerRequest: overrides.pickerRequest } : {})
   };
+}
+
+function applyPendingPickerEventIfReady() {
+  if (!state.pendingPickerNodeId || !state.pendingPickerStartedAt) return false;
+  const pendingTime = Date.parse(state.pendingPickerStartedAt);
+  const pickerEvent = state.pickerEvents.find((event) => Date.parse(event.createdAt || "") >= pendingTime);
+  if (!pickerEvent) return false;
+  state.selectedGraphNodeId = state.pendingPickerNodeId;
+  state.pendingPickerNodeId = null;
+  state.pendingPickerStartedAt = null;
+  applyPickerEventToSelectedNode(pickerEvent.id, { toastKey: "pickerAutoApplied" });
+  clearPickerSession("applied").then(() => renderPickerPanel());
+  return true;
 }
 
 function insertGraphNodeStep(workflow, match, newStep) {
@@ -1335,15 +1817,79 @@ function insertGraphNodeStep(workflow, match, newStep) {
   workflow.steps.splice(insertAt, 0, newStep);
 }
 
-function uniqueWorkflowStepId(workflow, base) {
+function uniqueWorkflowStepId(workflow, base, { excludeId = null } = {}) {
   const existing = collectWorkflowStepIds(workflow);
-  const normalizedBase = slugify(base || "next-step") || "next-step";
+  if (excludeId) existing.delete(String(excludeId));
+  const normalizedBase = normalizeWorkflowStepId(base || "next-step") || "next-step";
   if (!existing.has(normalizedBase)) return normalizedBase;
   for (let index = 2; index < 1000; index += 1) {
-    const candidate = `${normalizedBase}-${index}`;
+    const candidate = appendWorkflowStepIdSuffix(normalizedBase, index);
     if (!existing.has(candidate)) return candidate;
   }
-  return `${normalizedBase}-${Date.now().toString(36)}`;
+  return appendWorkflowStepIdSuffix(normalizedBase, Date.now().toString(36));
+}
+
+function scopedBrowserStepIdBase(workflow, match, requestedBase) {
+  const parentId = String(workflow.steps?.[match.topIndex]?.id ?? "operation").trim() || "operation";
+  const localId = sanitizeWorkflowStepIdSegment(requestedBase) || "next-step";
+  return `${parentId}.${localId}`;
+}
+
+function pickerEventStepIdBase(currentId, pickerEvent, action) {
+  const parentPrefix = String(currentId ?? "").includes(".")
+    ? String(currentId).split(".").slice(0, -1).join(".")
+    : "";
+  const identity = pickerEvent?.targetIdentity ?? {};
+  const attrs = identity.attributes && typeof identity.attributes === "object" ? identity.attributes : {};
+  const targetName = firstIdPart(
+    attrs["data-e2e"],
+    attrs["data-testid"],
+    attrs["data-test"],
+    attrs["data-cy"],
+    attrs.name,
+    attrs.id,
+    identity.inputType,
+    identity.tagName,
+    "target"
+  );
+  const localId = sanitizeWorkflowStepIdSegment(`${action || pickerEvent?.suggestedAction || "click"}-${targetName}`) || "pick-target";
+  return parentPrefix ? `${parentPrefix}.${localId}` : localId;
+}
+
+function isPickerPlaceholderId(stepId) {
+  const localId = String(stepId ?? "").split(".").at(-1) ?? "";
+  return /^pick-target(?:-\d+)?$/.test(localId);
+}
+
+function normalizeWorkflowStepId(value) {
+  return String(value ?? "")
+    .split(".")
+    .map((segment) => sanitizeWorkflowStepIdSegment(segment))
+    .filter(Boolean)
+    .join(".");
+}
+
+function sanitizeWorkflowStepIdSegment(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function appendWorkflowStepIdSuffix(stepId, suffix) {
+  const parts = String(stepId || "next-step").split(".");
+  const last = parts.pop() || "next-step";
+  parts.push(`${last}-${suffix}`);
+  return parts.join(".");
+}
+
+function firstIdPart(...values) {
+  for (const value of values) {
+    const part = sanitizeWorkflowStepIdSegment(value);
+    if (part) return part;
+  }
+  return "target";
 }
 
 function collectWorkflowStepIds(workflow) {
@@ -1474,6 +2020,190 @@ function transferOperationModeKey(previousId, nextId) {
   }
 }
 
+function setupActionPickers() {
+  document.querySelectorAll("[data-action-picker]").forEach((picker) => {
+    const input = elements[picker.dataset.actionPicker];
+    const trigger = picker.querySelector(".action-picker-trigger");
+    if (!input || !trigger) return;
+    trigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleActionPicker(input);
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openActionPicker(input);
+    });
+    syncActionPicker(input);
+  });
+}
+
+function toggleActionPicker(input) {
+  const picker = actionPickerForInput(input);
+  const menu = picker?.querySelector(".action-picker-menu");
+  if (!picker || !menu || input.disabled) return;
+  if (menu.hidden) openActionPicker(input);
+  else closeActionPickers();
+}
+
+function openActionPicker(input) {
+  const picker = actionPickerForInput(input);
+  if (!picker || input.disabled) return;
+  closeActionPickers(picker);
+  renderActionPicker(input);
+  const trigger = picker.querySelector(".action-picker-trigger");
+  const menu = picker.querySelector(".action-picker-menu");
+  if (!trigger || !menu) return;
+  menu.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+}
+
+function closeActionPickers(target = null) {
+  document.querySelectorAll("[data-action-picker]").forEach((picker) => {
+    if (target && picker.contains(target)) return;
+    const trigger = picker.querySelector(".action-picker-trigger");
+    const menu = picker.querySelector(".action-picker-menu");
+    if (!trigger || !menu) return;
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  });
+}
+
+function renderActionPickers() {
+  syncActionPicker(elements.nodeEditorAction);
+  syncActionPicker(elements.registryItemActionType);
+}
+
+function renderActionPicker(input) {
+  const picker = actionPickerForInput(input);
+  const menu = picker?.querySelector(".action-picker-menu");
+  if (!menu) return;
+  menu.innerHTML = "";
+  for (const value of actionPickerValues(input)) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = `action-picker-option ${value === input.value ? "active" : ""}`;
+    option.dataset.actionValue = value;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(value === input.value));
+    option.innerHTML = `
+      ${actionLabelHtml(value)}
+      <span class="action-picker-code">${escapeHtml(value)}</span>
+    `;
+    option.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setActionPickerValue(input, value, { emit: true });
+      closeActionPickers();
+    });
+    menu.append(option);
+  }
+}
+
+function syncActionPicker(input) {
+  if (!isActionPickerInput(input)) return;
+  const picker = actionPickerForInput(input);
+  const trigger = picker?.querySelector(".action-picker-trigger");
+  const label = picker?.querySelector("[data-action-picker-label]");
+  if (!picker || !trigger || !label) return;
+  label.innerHTML = actionLabelHtml(input.value);
+  trigger.disabled = Boolean(input.disabled);
+  trigger.classList.toggle("invalid", input.classList.contains("invalid"));
+  renderActionPicker(input);
+}
+
+function setActionPickerValue(input, value, { emit = false } = {}) {
+  input.value = value;
+  syncActionPicker(input);
+  if (!emit) return;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function actionPickerValues(input) {
+  const values = ACTION_PICKER_VALUES[input?.id] ?? [];
+  if (!input?.value || values.includes(input.value)) return values;
+  return [...values, input.value];
+}
+
+function actionPickerForInput(input) {
+  if (!input?.id) return null;
+  return document.querySelector(`[data-action-picker="${CSS.escape(input.id)}"]`);
+}
+
+function isActionPickerInput(input) {
+  return Boolean(input?.id && ACTION_PICKER_VALUES[input.id]);
+}
+
+function setupFieldHelps() {
+  document.querySelectorAll("label").forEach((label) => {
+    const fieldId = fieldIdForLabel(label);
+    if (!fieldId || !FIELD_HELP[fieldId] || label.dataset.helpReady === "true") return;
+    label.dataset.helpReady = "true";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "field-help-button";
+    button.dataset.fieldHelp = fieldId;
+    button.innerHTML = `
+      <span class="field-help-icon" aria-hidden="true">i</span>
+      <span class="field-help-popover" role="tooltip">
+        <strong data-field-help-title></strong>
+        <span data-field-help-body></span>
+      </span>
+    `;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleFieldHelp(button);
+    });
+
+    const existingRow = label.parentElement?.classList.contains("field-label-row") ? label.parentElement : null;
+    if (existingRow) {
+      const main = document.createElement("span");
+      main.className = "field-label-main";
+      existingRow.insertBefore(main, label);
+      main.append(label, button);
+    } else {
+      const row = document.createElement("div");
+      row.className = "field-label-line";
+      label.parentNode.insertBefore(row, label);
+      row.append(label, button);
+    }
+  });
+  renderFieldHelps();
+}
+
+function renderFieldHelps() {
+  document.querySelectorAll("[data-field-help]").forEach((button) => {
+    const help = fieldHelpFor(button.dataset.fieldHelp);
+    if (!help) return;
+    button.setAttribute("aria-label", help.title);
+    button.title = help.title;
+    button.querySelector("[data-field-help-title]").textContent = help.title;
+    button.querySelector("[data-field-help-body]").textContent = help.body;
+  });
+}
+
+function toggleFieldHelp(button) {
+  const active = button.classList.contains("active");
+  closeFieldHelps();
+  button.classList.toggle("active", !active);
+}
+
+function closeFieldHelps(target = null) {
+  document.querySelectorAll(".field-help-button.active").forEach((button) => {
+    if (target && button.contains(target)) return;
+    button.classList.remove("active");
+  });
+}
+
+function fieldHelpFor(fieldId) {
+  return FIELD_HELP[fieldId]?.[state.language] ?? FIELD_HELP[fieldId]?.en ?? null;
+}
+
+function fieldIdForLabel(label) {
+  if (label.htmlFor) return label.htmlFor;
+  if (label.id?.endsWith("Label")) return label.id.slice(0, -"Label".length);
+  return "";
+}
+
 function readNodeEditorField(step, field) {
   if (field.read) return String(field.read(step) ?? "");
   return fieldValueToInput(step[field.field]);
@@ -1528,7 +2258,7 @@ function ensureSelectOption(select, value) {
   if ([...select.options].some((option) => option.value === value)) return;
   const option = document.createElement("option");
   option.value = value;
-  option.textContent = value;
+  option.textContent = selectOptionLabel(select, value);
   select.append(option);
 }
 
@@ -1580,13 +2310,16 @@ function createGraphNode(step, { depth, topIndex, childIndex, branch, kind }) {
 }
 
 function shortStepLabel(step) {
-  const parts = String(step.id ?? step.action).split(".");
-  return parts.at(-1) || step.action;
+  if (step.id) {
+    const parts = String(step.id).split(".");
+    return parts.at(-1) || actionLabel(step.action);
+  }
+  return actionLabel(step.action);
 }
 
 function stepMeta(step, branch) {
   const details = [];
-  if (branch && branch !== "main") details.push(branch);
+  if (branch && branch !== "main") details.push(branchLabel(branch));
   if (step.selector) details.push(step.selector);
   if (step.url) details.push(shorten(step.url));
   if (step.name) details.push(step.name);
@@ -2266,7 +2999,7 @@ function summarizeRunActivity(run, events = []) {
 function eventDetail(event, run = null) {
   const step = event.stepId ? findWorkflowStep(run?.workflowId, event.stepId) : null;
   const parts = [];
-  if (event.action ?? step?.action) parts.push(event.action ?? step.action);
+  if (event.action ?? step?.action) parts.push(actionLabel(event.action ?? step.action));
   const target = stepTarget(step);
   if (target) parts.push(target);
   if (event.error?.message) parts.push(cleanErrorMessage(event.error.message));
@@ -2276,8 +3009,8 @@ function eventDetail(event, run = null) {
 }
 
 function describeStep(event, step) {
-  const parts = [event.stepId ?? step?.id ?? event.action ?? "step"];
-  if (event.action ?? step?.action) parts.push(event.action ?? step.action);
+  const parts = [event.stepId ?? step?.id ?? (event.action ? actionLabel(event.action) : "step")];
+  if (event.action ?? step?.action) parts.push(actionLabel(event.action ?? step.action));
   const target = stepTarget(step);
   if (target) parts.push(target);
   return parts.join(" · ");
@@ -2404,6 +3137,7 @@ function fillRegistryForm(item) {
   elements.registryItemSite.value = item.siteId ?? item.id ?? "";
   elements.registryItemPage.value = item.pageId ?? "";
   elements.registryItemActionType.value = item.actionType ?? "click";
+  syncActionPicker(elements.registryItemActionType);
   elements.registryItemBaseUrl.value = item.baseUrl ?? "";
   elements.registryItemUrlPattern.value = item.urlPattern ?? "";
   elements.registryItemSelector.value = item.selector ?? item.stateSelector ?? "";
@@ -2448,6 +3182,7 @@ function setRegistryFieldState(section) {
   for (const id of optionalIds) {
     elements[id].disabled = !enables.includes(id);
   }
+  syncActionPicker(elements.registryItemActionType);
 }
 
 function populateRegistrySelects(item = {}) {
@@ -3017,9 +3752,10 @@ function selectTab(name) {
 function startPolling() {
   state.polling = setInterval(async () => {
     const hasActive = state.runs.some((run) => ["queued", "running"].includes(run.status));
-    const shouldPollPicker = Boolean(state.selectedGraphNodeId);
+    const shouldPollPicker = Boolean(state.selectedGraphNodeId || state.pickerSession);
     if (!hasActive && !state.selectedRunId && !shouldPollPicker) return;
-    await Promise.all([loadRuntime(), loadRegistry(), loadRuns(), loadProfiles(), loadAudit(), loadPickerEvents()]);
+    await Promise.all([loadRuntime(), loadRegistry(), loadRuns(), loadProfiles(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
+    applyPendingPickerEventIfReady();
     render();
     if (state.selectedRunId) await selectRun(state.selectedRunId);
   }, 1500);
@@ -3061,6 +3797,8 @@ function applyStaticTranslations() {
   translateStatusOptions(elements.profileLoginState);
   translateStatusOptions(elements.profileStatus);
   translateStatusOptions(elements.registryItemStatus);
+  renderActionPickers();
+  renderFieldHelps();
   updateGraphLayoutButtons();
 }
 
@@ -3070,6 +3808,11 @@ function translateStatusOptions(select) {
   }
 }
 
+function selectOptionLabel(select, value) {
+  if (select === elements.profileLoginState || select === elements.profileStatus || select === elements.registryItemStatus) return statusLabel(value);
+  return String(value ?? "");
+}
+
 function t(key, params = {}) {
   const message = I18N[state.language]?.[key] ?? I18N.en[key] ?? key;
   return message.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name) => String(params[name] ?? ""));
@@ -3077,6 +3820,37 @@ function t(key, params = {}) {
 
 function statusLabel(value) {
   return STATUS_LABELS[state.language]?.[value] ?? STATUS_LABELS.en[value] ?? String(value ?? "");
+}
+
+function actionLabel(value) {
+  const { primary, secondary } = actionLabelParts(value);
+  return [primary, secondary].filter(Boolean).join(" ");
+}
+
+function actionLabelHtml(value) {
+  const { primary, secondary } = actionLabelParts(value);
+  return `
+    <span class="action-label">
+      <span class="action-label-main">${escapeHtml(primary)}</span>
+      ${secondary ? `<span class="action-label-sub">${escapeHtml(secondary)}</span>` : ""}
+    </span>
+  `;
+}
+
+function actionLabelParts(value) {
+  const code = String(value ?? "");
+  const zh = ACTION_LABELS.zh?.[code];
+  const en = ACTION_LABELS.en?.[code];
+  if (zh && en) {
+    return state.language === "zh"
+      ? { primary: zh, secondary: en }
+      : { primary: en, secondary: zh };
+  }
+  return { primary: en ?? zh ?? code, secondary: "" };
+}
+
+function branchLabel(value) {
+  return BRANCH_LABELS[state.language]?.[value] ?? BRANCH_LABELS.en[value] ?? String(value ?? "");
 }
 
 function parseJson(value, label) {

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebOps Forge Picker</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header>
+        <h1>WebOps Forge Picker</h1>
+        <p id="tabText">正在读取当前页面</p>
+      </header>
+
+      <section class="panel">
+        <div class="panel-title">Studio</div>
+        <div id="studioText" class="status-line">检测中</div>
+        <div id="targetText" class="status-line">等待拾取</div>
+        <button id="openStudioBtn" type="button">打开 Studio</button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">节点拾取</div>
+        <div class="grid">
+          <button class="primary" data-pick="targetElement" data-action="click" type="button">目标元素</button>
+          <button data-pick="inputTarget" data-action="fill" type="button">输入框</button>
+          <button data-pick="clickTarget" data-action="click" type="button">点击控件</button>
+          <button data-pick="extractTarget" data-action="extract" type="button">提取文本</button>
+        </div>
+        <button id="stopPickBtn" class="stop-button" type="button" disabled>停止拾取</button>
+        <div id="feedback" class="feedback">先在 Studio 点“拾取节点”，再在这里启动拾取。</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">最近发送</div>
+        <pre id="latestPost">{}</pre>
+      </section>
+    </main>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

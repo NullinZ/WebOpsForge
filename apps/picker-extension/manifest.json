@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "WebOps Forge Picker",
+  "description": "Pick visible page elements and send stable target identity to WebOps Forge Studio.",
+  "version": "0.1.0",
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:4177/*",
+    "http://localhost:4177/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "WebOps Forge Picker"
+  }
+}

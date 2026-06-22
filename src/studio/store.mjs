@@ -14,6 +14,7 @@ export class StudioStore {
     this.profilesFile = path.join(dir, "profiles.json");
     this.registryFile = path.join(dir, "registry.json");
     this.pickerEventsFile = path.join(dir, "picker-events.json");
+    this.pickerSessionFile = path.join(dir, "picker-session.json");
     this.auditFile = path.join(dir, "audit.jsonl");
     this.runsDir = path.join(dir, "runs");
   }
@@ -26,6 +27,7 @@ export class StudioStore {
     await this.#ensureJsonFile(this.profilesFile, []);
     await this.#ensureJsonFile(this.registryFile, createDefaultRegistry(this.clock));
     await this.#ensureJsonFile(this.pickerEventsFile, []);
+    await this.#ensureJsonFile(this.pickerSessionFile, null);
 
     const workflows = await this.listWorkflows();
     if (workflows.length === 0) {
@@ -252,6 +254,43 @@ export class StudioStore {
       confidence: normalized.confidence
     });
     return normalized;
+  }
+
+  async getPickerSession() {
+    const session = normalizePickerSession(await this.#readJson(this.pickerSessionFile, null), this.clock);
+    if (!session) return null;
+    if (Date.parse(session.expiresAt) <= this.clock().getTime()) {
+      await this.clearPickerSession({ sessionId: session.id, reason: "expired" });
+      return null;
+    }
+    return session;
+  }
+
+  async savePickerSession(session) {
+    const normalized = normalizePickerSession(session, this.clock);
+    if (!normalized) throw new Error("Picker session must be an object");
+    await this.#writeJson(this.pickerSessionFile, normalized);
+    await this.appendAudit({
+      type: "picker.session_started",
+      pickerSessionId: normalized.id,
+      workflowId: normalized.workflowId,
+      nodeId: normalized.nodeId,
+      targetUrl: normalized.targetUrl
+    });
+    return normalized;
+  }
+
+  async clearPickerSession({ sessionId = null, reason = "cleared" } = {}) {
+    const current = await this.#readJson(this.pickerSessionFile, null);
+    if (!current?.id) return { cleared: false, session: null };
+    if (sessionId && current.id !== sessionId) return { cleared: false, session: normalizePickerSession(current, this.clock) };
+    await this.#writeJson(this.pickerSessionFile, null);
+    await this.appendAudit({
+      type: "picker.session_cleared",
+      pickerSessionId: current.id,
+      reason
+    });
+    return { cleared: true, session: null };
   }
 
   async listPickerEvents({ limit = 20 } = {}) {
@@ -532,6 +571,43 @@ export class StudioStore {
 
 function createId(prefix) {
   return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 18)}`;
+}
+
+function normalizePickerSession(session, clock = () => new Date()) {
+  if (!session || typeof session !== "object" || Array.isArray(session)) return null;
+  const now = clock();
+  const allowedUrls = uniqueStrings([session.targetUrl, ...(Array.isArray(session.allowedUrls) ? session.allowedUrls : [])])
+    .filter((url) => /^https?:\/\//i.test(url));
+  const startedAt = typeof session.startedAt === "string" ? session.startedAt : now.toISOString();
+  const expiresAt = typeof session.expiresAt === "string"
+    ? session.expiresAt
+    : new Date(now.getTime() + 20 * 60 * 1000).toISOString();
+  return {
+    id: session.id || createId("picker_session"),
+    status: session.status || "waiting",
+    workflowId: session.workflowId ?? null,
+    workflowName: session.workflowName ?? "",
+    nodeId: session.nodeId ?? null,
+    nodeLabel: session.nodeLabel ?? "",
+    targetUrl: allowedUrls[0] ?? "",
+    allowedUrls,
+    startedAt,
+    expiresAt,
+    createdAt: session.createdAt ?? now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
 }
 
 function normalizeWorkflowGraph(graph = {}) {

@@ -1,0 +1,60 @@
+{
+  "task_id": "2026-06-22-selector-picker",
+  "objective": "Design and implement a Chrome-side element picker that captures stable target identity and feeds WebOpsForge Studio node configuration.",
+  "cwd": "/Users/nullin/GitHubO/WebOpsForge",
+  "repos": [
+    {
+      "path": "/Users/nullin/GitHubO/WebOpsForge",
+      "branch": "main",
+      "dirty_expected": true
+    },
+    {
+      "path": "/Users/nullin/GitHubO/WebOpsForge/apps/picker-extension",
+      "branch": "main",
+      "dirty_expected": true
+    }
+  ],
+  "phase": "complete",
+  "completed": [
+    "phase-0-init",
+    "phase-1-webops-picker-api",
+    "phase-2-studio-picker-ui",
+    "phase-3-chrome-extension-push",
+    "phase-4-target-url-session-scope",
+    "phase-5-node-id-and-action-i18n",
+    "phase-5-1-custom-action-picker",
+    "phase-5-2-field-help-and-picker-polish",
+    "phase-5-3-picker-panel-autocollapse",
+    "phase-5-4-extension-stop-and-studio-reuse",
+    "phase-6-validation-docs"
+  ],
+  "in_progress": null,
+  "pending": [],
+  "last_checkpoint": "2026-06-22T16:44:24+08:00",
+  "next_action": "Reload the unpacked Chrome extension from /Users/nullin/GitHubO/WebOpsForge/apps/picker-extension and perform one manual pick on a real target page.",
+  "artifacts": [
+    "docs/worklog/2026-06-22-selector-picker.md",
+    "docs/worklog/state/2026-06-22-selector-picker.json",
+    "backups/selector-picker-20260622/",
+    "docs/SELECTOR_PICKER.md",
+    "docs/STUDIO_API.md",
+    "apps/picker-extension/"
+  ],
+  "validation": {
+    "api": "passed",
+    "tests": "passed",
+    "chrome_extension": "syntax-passed-manual-reload-pending",
+    "studio_ui": "passed",
+    "node_id_generation": "passed",
+    "action_i18n": "passed",
+    "custom_action_picker": "passed",
+    "field_help_tooltips": "passed",
+    "picker_visual_hierarchy": "passed",
+    "studio_picker_auto_collapse": "passed",
+    "extension_url_gate_removed": "passed",
+    "extension_stop_pick": "passed",
+    "studio_tab_reuse": "passed"
+  },
+  "blockers": [],
+  "notes_for_resume": "Picker target URL values are now references only: the Chrome extension no longer disables itself on target URL mismatch and instead enables the side panel on regular http/https pages while a Studio picker session exists. Studio publishes /api/picker/session when Pick Node is clicked; the Browser Picker panel in the 4177 UI is collapsed by default, expands on picker controls, and collapses when clicking outside or applying a pick. The extension side panel now exposes a Stop Picking button backed by STOP_PICK/PICKER_CANCELLED messages, and Open Studio focuses the most recently used existing 127.0.0.1:4177 or localhost:4177 tab before creating a new one. Node id generation preserves parent.child ids for browser steps. Action type controls are custom bilingual pickers, not native select elements; displayed labels use primary/secondary language hierarchy and persisted values remain stable English codes. Field labels have injected circular i help buttons with localized purpose/usage/source explanations. Reload the unpacked extension from apps/picker-extension and manually pick a real page element."
+}

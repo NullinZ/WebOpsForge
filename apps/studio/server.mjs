@@ -107,6 +107,22 @@ async function handleApi(req, res, url) {
 }
 
 async function handlePicker(req, res, parts, url) {
+  if (parts[1] === "session") {
+    if (req.method === "GET") {
+      sendJson(res, 200, { session: await store.getPickerSession() });
+      return;
+    }
+    if (req.method === "POST") {
+      const session = await store.savePickerSession(await readJsonBody(req));
+      sendJson(res, 201, { session });
+      return;
+    }
+    if (req.method === "DELETE") {
+      sendJson(res, 200, await store.clearPickerSession(await readJsonBody(req)));
+      return;
+    }
+  }
+
   if (parts[1] === "events") {
     if (req.method === "GET") {
       const limit = Number(url.searchParams.get("limit") ?? 20);

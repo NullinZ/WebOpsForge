@@ -24,6 +24,105 @@ Exports the registry, workflows, profiles, and recent run metadata.
 
 Imports the registry, workflows, and profiles from an exported bundle.
 
+## Browser Picker
+
+### `GET /api/picker/session`
+
+Returns the active picker session, or `null` when Studio is not waiting for a target element.
+
+The Chrome extension uses this endpoint to decide whether a picker session exists. While a session exists, the extension side panel is available on regular `http` and `https` pages; `targetUrl` and `allowedUrls` are references for Studio, not a tab-level visibility gate.
+
+### `POST /api/picker/session`
+
+Creates or replaces the active picker session.
+
+Request:
+
+```json
+{
+  "workflowId": "sample-dry-run-search",
+  "workflowName": "Search operation",
+  "nodeId": "fillSearch",
+  "nodeLabel": "Fill search",
+  "targetUrl": "https://www.douyin.com/",
+  "allowedUrls": ["https://www.douyin.com/"],
+  "startedAt": "2026-06-22T05:20:00.000Z"
+}
+```
+
+### `DELETE /api/picker/session`
+
+Clears the active picker session. Studio and the bundled extension call this after a pick is posted or when no target URL can be inferred.
+
+### `GET /api/picker/events`
+
+Returns recent Chrome picker events.
+
+Query:
+
+- `limit`: maximum events to return. Default: `20`.
+
+### `POST /api/picker/events`
+
+Receives a Chrome-side element pick and normalizes it into a Studio picker event.
+
+Request:
+
+```json
+{
+  "source": "webops-forge-picker-extension",
+  "field": "inputTarget",
+  "url": "https://www.douyin.com/",
+  "title": "抖音",
+  "suggestedAction": "fill",
+  "recommendedSelector": "input[data-e2e=\"searchbar-input\"]",
+  "selectorCandidates": [
+    {
+      "selector": "input[data-e2e=\"searchbar-input\"]",
+      "source": "attribute:data-e2e",
+      "score": 104,
+      "matchCount": 1,
+      "visibleCount": 1,
+      "unique": true,
+      "stable": true
+    }
+  ],
+  "target": {
+    "tagName": "input",
+    "attributes": {
+      "data-e2e": "searchbar-input",
+      "placeholder": "搜索"
+    },
+    "classList": ["search-input"],
+    "text": "",
+    "labelText": "",
+    "accessibleName": "搜索"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "event": {
+    "id": "picker_...",
+    "recommendedSelector": "input[data-e2e=\"searchbar-input\"]",
+    "confidence": 100,
+    "targetIdentity": {
+      "version": 1,
+      "tagName": "input",
+      "attributes": {
+        "data-e2e": "searchbar-input",
+        "placeholder": "搜索"
+      }
+    }
+  }
+}
+```
+
+Studio stores picker events in `.webops-forge/picker-events.json` and the active picker session in `.webops-forge/picker-session.json`. Applying an event to a workflow node writes `selector`, `selectorCandidates`, `pickedFrom`, and `targetIdentity`. Playwright runs use `targetIdentity` to score candidate elements before acting. The bundled Chrome extension lives in `apps/picker-extension`.
+
 ## Registry
 
 The registry is the generic authoring model behind the Studio UI:

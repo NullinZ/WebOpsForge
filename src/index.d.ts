@@ -292,6 +292,21 @@ export interface PickerEvent {
   createdAt: string;
 }
 
+export interface PickerSession {
+  id: string;
+  status: "waiting" | "completed" | "cancelled" | string;
+  workflowId: string | null;
+  workflowName: string;
+  nodeId: string | null;
+  nodeLabel: string;
+  targetUrl: string;
+  allowedUrls: string[];
+  startedAt: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StudioProfileRecord {
   id: string;
   name: string;
@@ -400,6 +415,11 @@ export class StudioStore {
   leaseProfile(profileId: string | null, runId: string): Promise<StudioProfileRecord | null>;
   releaseProfile(profileId: string | null, runId: string, status?: string): Promise<StudioProfileRecord | null>;
   listRuns(options?: { limit?: number }): Promise<StudioRunRecord[]>;
+  savePickerEvent(event: Record<string, unknown>): Promise<PickerEvent>;
+  listPickerEvents(options?: { limit?: number }): Promise<PickerEvent[]>;
+  getPickerSession(): Promise<PickerSession | null>;
+  savePickerSession(session: Partial<PickerSession> & { allowedUrls?: string[]; targetUrl?: string }): Promise<PickerSession>;
+  clearPickerSession(options?: { sessionId?: string | null; reason?: string }): Promise<{ cleared: boolean; session: PickerSession | null }>;
   getRun(id: string): Promise<StudioRunRecord | null>;
   createRun(options: { workflowId: string; mode?: string; input?: Record<string, unknown>; context?: Record<string, unknown>; driverConfig?: Record<string, unknown>; profileId?: string | null; sourceRunId?: string | null }): Promise<StudioRunRecord>;
   updateRun(id: string, patch: Partial<StudioRunRecord>): Promise<StudioRunRecord>;

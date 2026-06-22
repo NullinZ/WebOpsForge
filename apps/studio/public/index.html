@@ -76,6 +76,7 @@
               </div>
               <div class="button-row">
                 <button class="secondary" id="addGraphNodeButton" type="button" data-i18n="addNode">Add Node</button>
+                <button class="secondary" id="addPickerNodeButton" type="button" data-i18n="pickNode">Pick Node</button>
                 <button class="secondary" id="autoLayoutButton" type="button" data-i18n="autoLayout">Auto Layout</button>
                 <button class="primary" id="saveGraphWorkflowButton" type="button" data-i18n="save">Save</button>
               </div>
@@ -111,22 +112,15 @@
                     <input id="nodeEditorId" autocomplete="off" />
                   </div>
                   <div>
-                    <label for="nodeEditorAction" data-i18n="actionType">Action Type</label>
-                    <select id="nodeEditorAction">
-                      <option value="goto">goto</option>
-                      <option value="waitFor">waitFor</option>
-                      <option value="click">click</option>
-                      <option value="fill">fill</option>
-                      <option value="press">press</option>
-                      <option value="extract">extract</option>
-                      <option value="apiCall">apiCall</option>
-                      <option value="operation">operation</option>
-                      <option value="screenshot">screenshot</option>
-                      <option value="approval">approval</option>
-                      <option value="assertText">assertText</option>
-                      <option value="assertOutput">assertOutput</option>
-                      <option value="checkpoint">checkpoint</option>
-                    </select>
+                    <label id="nodeEditorActionLabel" data-i18n="actionType">Action Type</label>
+                    <input id="nodeEditorAction" type="hidden" value="checkpoint" />
+                    <div class="action-picker" data-action-picker="nodeEditorAction" aria-labelledby="nodeEditorActionLabel">
+                      <button class="action-picker-trigger" id="nodeEditorActionButton" type="button" aria-haspopup="listbox" aria-expanded="false">
+                        <span data-action-picker-label>Checkpoint 检查点</span>
+                        <span class="action-picker-caret" aria-hidden="true">▾</span>
+                      </button>
+                      <div class="action-picker-menu" role="listbox" hidden></div>
+                    </div>
                   </div>
                   <div>
                     <label for="nodeEditorName" data-i18n="name">Name</label>
@@ -173,6 +167,16 @@
                       <strong data-i18n="browserPicker">Browser Picker</strong>
                       <span id="latestPickerStatus" class="picker-status">-</span>
                     </div>
+                    <button
+                      class="picker-panel-toggle"
+                      id="togglePickerPanelButton"
+                      type="button"
+                      aria-controls="pickerEventList"
+                      aria-expanded="false"
+                      aria-label="Show picker panel"
+                    >
+                      <span aria-hidden="true">▾</span>
+                    </button>
                   </div>
                   <div class="picker-event-list" id="pickerEventList"></div>
                 </section>
@@ -238,18 +242,15 @@
                     <select id="registryItemPage"></select>
                   </div>
                   <div>
-                    <label for="registryItemActionType" data-i18n="actionType">Action Type</label>
-                    <select id="registryItemActionType">
-                      <option value="goto">goto</option>
-                      <option value="waitFor">waitFor</option>
-                      <option value="click">click</option>
-                      <option value="fill">fill</option>
-                      <option value="press">press</option>
-                      <option value="extract">extract</option>
-                      <option value="screenshot">screenshot</option>
-                      <option value="apiCall">apiCall</option>
-                      <option value="approval">approval</option>
-                    </select>
+                    <label id="registryItemActionTypeLabel" data-i18n="actionType">Action Type</label>
+                    <input id="registryItemActionType" type="hidden" value="click" />
+                    <div class="action-picker" data-action-picker="registryItemActionType" aria-labelledby="registryItemActionTypeLabel">
+                      <button class="action-picker-trigger" id="registryItemActionTypeButton" type="button" aria-haspopup="listbox" aria-expanded="false">
+                        <span data-action-picker-label>Click 点击</span>
+                        <span class="action-picker-caret" aria-hidden="true">▾</span>
+                      </button>
+                      <div class="action-picker-menu" role="listbox" hidden></div>
+                    </div>
                   </div>
                   <div>
                     <label for="registryItemBaseUrl" data-i18n="baseUrl">Base URL</label>

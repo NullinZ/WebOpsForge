@@ -63,6 +63,8 @@ button {
   cursor: pointer;
   min-height: 34px;
   padding: 0 12px;
+  font-weight: 700;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, color 120ms ease;
 }
 
 button:hover {
@@ -83,6 +85,13 @@ button.primary {
 button.secondary,
 button.icon-button {
   background: var(--surface-2);
+}
+
+.topbar-actions button:not(.language-control),
+.button-row button {
+  min-height: 32px;
+  padding-inline: 10px;
+  white-space: nowrap;
 }
 
 .danger-action {
@@ -134,17 +143,231 @@ label {
   text-transform: uppercase;
 }
 
-.field-label-row {
+.field-label-line {
+  position: relative;
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.field-label-line > label,
+.field-label-main > label {
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.field-label-main {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.field-label-row > label {
+  margin: 0;
+}
+
+.field-help-button {
+  position: relative;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid #c4ceda;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.field-help-button:hover,
+.field-help-button:focus-visible,
+.field-help-button.active {
+  border-color: var(--accent);
+  background: #eef5ff;
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(35, 87, 214, 0.12);
+}
+
+.field-help-popover {
+  position: absolute;
+  z-index: 80;
+  right: -8px;
+  top: calc(100% + 8px);
+  width: min(280px, calc(100vw - 32px));
+  display: none;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+  text-align: left;
+  text-transform: none;
+}
+
+.field-help-popover::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid var(--line-strong);
+  border-top: 1px solid var(--line-strong);
+  background: #ffffff;
+  transform: rotate(45deg);
+}
+
+.field-help-popover strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.field-help-popover span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.field-help-button:hover .field-help-popover,
+.field-help-button:focus-visible .field-help-popover,
+.field-help-button.active .field-help-popover {
+  display: block;
 }
 
 .inline-actions {
   display: inline-flex;
   gap: 6px;
-  margin-bottom: 5px;
+  margin-bottom: 0;
+}
+
+.action-picker {
+  position: relative;
+}
+
+.action-picker-trigger {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  text-align: left;
+}
+
+.action-picker-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.action-picker-trigger:disabled {
+  background: var(--surface-2);
+}
+
+.action-picker-caret {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.action-picker-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+}
+
+.action-picker-option {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
+}
+
+.action-picker-option:hover,
+.action-picker-option.active {
+  background: #eef5ff;
+}
+
+.action-picker-option.active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.action-label {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  line-height: 1.15;
+}
+
+.action-label-main {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-label-sub {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-picker-code {
+  flex: 0 0 auto;
+  color: #475569;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #eef2f6;
+  font-size: 10px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-weight: 600;
 }
 
 .compact-button {
@@ -725,20 +948,33 @@ h2 {
 .node-status {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
   font-weight: 800;
 }
 
 .node-action {
-  max-width: 110px;
+  max-width: 122px;
   color: var(--accent);
-  text-transform: uppercase;
+}
+
+.node-action .action-label {
+  gap: 1px;
+}
+
+.node-action .action-label-main {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.node-action .action-label-sub {
+  font-size: 10px;
+  text-transform: none;
 }
 
 .node-status {
   max-width: 86px;
   color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .workflow-node strong {
@@ -802,6 +1038,7 @@ h2 {
 .picker-panel-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
   font-size: 12px;
@@ -815,6 +1052,26 @@ h2 {
 .picker-status {
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.picker-panel-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.picker-panel-toggle span {
+  transition: transform 0.16s ease;
+}
+
+.picker-panel.expanded .picker-panel-toggle span {
+  transform: rotate(180deg);
 }
 
 .picker-event-list {

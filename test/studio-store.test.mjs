@@ -122,6 +122,21 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     const pickerEvents = await store.listPickerEvents();
     assert.equal(pickerEvents[0].id, pickerEvent.id);
 
+    const pickerSession = await store.savePickerSession({
+      workflowId: "workflow-01",
+      workflowName: "Workflow 01",
+      nodeId: "fillSearch",
+      nodeLabel: "Fill search",
+      targetUrl: "https://www.douyin.com/",
+      allowedUrls: ["https://www.douyin.com/", "https://www.douyin.com/search"]
+    });
+    assert.equal(pickerSession.targetUrl, "https://www.douyin.com/");
+    assert.deepEqual(pickerSession.allowedUrls, ["https://www.douyin.com/", "https://www.douyin.com/search"]);
+    assert.equal((await store.getPickerSession()).id, pickerSession.id);
+    const clearedPickerSession = await store.clearPickerSession({ sessionId: pickerSession.id, reason: "test" });
+    assert.equal(clearedPickerSession.cleared, true);
+    assert.equal(await store.getPickerSession(), null);
+
     const workflow = (await store.listWorkflows())[0];
     const workflowWithGraph = await store.saveWorkflow({
       ...workflow,
@@ -175,6 +190,8 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     assert.ok(audit.some((item) => item.type === "run.cancel_requested"));
     assert.ok(audit.some((item) => item.type === "bundle.imported"));
     assert.ok(audit.some((item) => item.type === "picker.event_received"));
+    assert.ok(audit.some((item) => item.type === "picker.session_started"));
+    assert.ok(audit.some((item) => item.type === "picker.session_cleared"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
