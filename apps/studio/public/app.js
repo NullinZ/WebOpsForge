@@ -716,7 +716,7 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit()]);
+  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit(), loadPickerEvents()]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   if (!state.selectedRegistryId) selectDefaultRegistryItem();
@@ -753,6 +753,14 @@ async function loadAudit() {
   state.audit = data.audit;
 }
 
+async function loadPickerEvents() {
+  const data = await api("/api/picker/events?limit=10");
+  state.pickerEvents = data.events ?? [];
+  if (!state.selectedPickerEventId && state.pickerEvents[0]) {
+    state.selectedPickerEventId = state.pickerEvents[0].id;
+  }
+}
+
 function render() {
   renderRuntime();
   renderRegistry();
@@ -761,6 +769,7 @@ function render() {
   renderRuns();
   renderGraph();
   renderAudit();
+  renderPickerPanel();
 }
 
 function renderRuntime() {
@@ -1196,6 +1205,7 @@ function renderGraphNodeEditor() {
   if (!match) {
     elements.nodeEditorKind.textContent = t("nodeEditor");
     elements.nodeEditorKind.className = "pill muted";
+    renderPickerPanel();
     return;
   }
 
@@ -1212,9 +1222,79 @@ function renderGraphNodeEditor() {
     }
     elements.nodeEditorJson.value = formatJson(match.step);
     elements.nodeEditorJson.classList.remove("invalid");
+    renderPickerPanel();
   } finally {
     state.nodeEditorSyncing = false;
   }
+}
+
+function renderPickerPanel() {
+  if (!elements.pickerEventList) return;
+  const hasSelection = Boolean(state.selectedGraphNodeId && findWorkflowNode(currentWorkflowRecord()?.workflow, state.selectedGraphNodeId));
+  elements.applyLatestPickButton.disabled = !hasSelection || !state.pickerEvents.length;
+  const latest = state.pickerEvents[0] ?? null;
+  elements.latestPickerStatus.textContent = latest
+    ? `${latest.confidence ?? 0}% · ${latest.recommendedSelector || "-"}`
+    : t("noPicks");
+  elements.pickerEventList.innerHTML = "";
+
+  if (!state.pickerEvents.length) {
+    elements.pickerEventList.innerHTML = `<div class="picker-empty">${escapeHtml(t("noPicks"))}</div>`;
+    return;
+  }
+
+  for (const pickerEvent of state.pickerEvents.slice(0, 5)) {
+    const row = document.createElement("div");
+    const selected = pickerEvent.id === state.selectedPickerEventId;
+    row.className = `picker-event-row ${selected ? "active" : ""}`;
+    row.dataset.pickerId = pickerEvent.id;
+    const bestCandidate = pickerEvent.selectorCandidates?.[0] ?? null;
+    const matchInfo = bestCandidate
+      ? `${bestCandidate.matchCount ?? "-"} / ${bestCandidate.visibleCount ?? "-"}`
+      : "-";
+    row.innerHTML = `
+      <div class="picker-event-main">
+        <strong>${escapeHtml(pickerEvent.recommendedSelector || "-")}</strong>
+        <span>${escapeHtml(pickerEvent.pickedFrom?.title || pickerEvent.pickedFrom?.url || "-")}</span>
+      </div>
+      <div class="picker-event-meta">
+        <span>${escapeHtml(t("confidence"))}: ${escapeHtml(String(pickerEvent.confidence ?? 0))}%</span>
+        <span>${escapeHtml(pickerEvent.suggestedAction || "click")}</span>
+        <span>${escapeHtml(matchInfo)}</span>
+        <button class="compact-button" type="button" data-picker-apply="${escapeHtml(pickerEvent.id)}">${escapeHtml(t("apply"))}</button>
+      </div>
+    `;
+    elements.pickerEventList.append(row);
+  }
+}
+
+function applyPickerEventToSelectedNode(pickerEventId) {
+  if (!pickerEventId || !state.selectedGraphNodeId) return;
+  const pickerEvent = state.pickerEvents.find((item) => item.id === pickerEventId);
+  if (!pickerEvent) return;
+  const workflow = readWorkflowDraft();
+  if (!workflow) return;
+  const match = findWorkflowNode(workflow, state.selectedGraphNodeId);
+  if (!match) return;
+
+  const previousId = String(match.step.id ?? "");
+  const selector = pickerEvent.recommendedSelector || pickerEvent.selectorCandidates?.[0]?.selector;
+  if (selector) match.step.selector = selector;
+  if (!["click", "fill", "press", "extract", "waitFor"].includes(match.step.action)) {
+    match.step.action = pickerEvent.suggestedAction || "click";
+  }
+  if (match.step.action === "fill" && match.step.value == null) {
+    match.step.value = "{{input.query}}";
+  }
+  if (match.step.action === "press" && !match.step.key) {
+    match.step.key = "Enter";
+  }
+  match.step.targetIdentity = pickerEvent.targetIdentity;
+  match.step.selectorCandidates = pickerEvent.selectorCandidates ?? [];
+  match.step.pickedFrom = pickerEvent.pickedFrom;
+  state.selectedPickerEventId = pickerEvent.id;
+  commitGraphNodeEdit(workflow, previousId, String(match.step.id ?? previousId));
+  showToast(t("selectedPickApplied"));
 }
 
 function addGraphNode() {
@@ -2937,8 +3017,9 @@ function selectTab(name) {
 function startPolling() {
   state.polling = setInterval(async () => {
     const hasActive = state.runs.some((run) => ["queued", "running"].includes(run.status));
-    if (!hasActive && !state.selectedRunId) return;
-    await Promise.all([loadRuntime(), loadRegistry(), loadRuns(), loadProfiles(), loadAudit()]);
+    const shouldPollPicker = Boolean(state.selectedGraphNodeId);
+    if (!hasActive && !state.selectedRunId && !shouldPollPicker) return;
+    await Promise.all([loadRuntime(), loadRegistry(), loadRuns(), loadProfiles(), loadAudit(), loadPickerEvents()]);
     render();
     if (state.selectedRunId) await selectRun(state.selectedRunId);
   }, 1500);
