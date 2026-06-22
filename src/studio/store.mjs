@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createSampleWorkflowRecord } from "./sample-workflows.mjs";
 import { normalizeWorkflow } from "../workflow.mjs";
+import { normalizePickerEvent } from "../selector-identity.mjs";
 
 export class StudioStore {
   constructor({ dir = process.env.WEBOPS_FORGE_DATA_DIR ?? path.join(process.cwd(), ".webops-forge"), clock = () => new Date() } = {}) {
@@ -12,6 +13,7 @@ export class StudioStore {
     this.runsFile = path.join(dir, "runs.json");
     this.profilesFile = path.join(dir, "profiles.json");
     this.registryFile = path.join(dir, "registry.json");
+    this.pickerEventsFile = path.join(dir, "picker-events.json");
     this.auditFile = path.join(dir, "audit.jsonl");
     this.runsDir = path.join(dir, "runs");
   }
@@ -23,6 +25,7 @@ export class StudioStore {
     await this.#ensureJsonFile(this.runsFile, []);
     await this.#ensureJsonFile(this.profilesFile, []);
     await this.#ensureJsonFile(this.registryFile, createDefaultRegistry(this.clock));
+    await this.#ensureJsonFile(this.pickerEventsFile, []);
 
     const workflows = await this.listWorkflows();
     if (workflows.length === 0) {
@@ -161,6 +164,7 @@ export class StudioStore {
       leasedRunId: status === "busy" ? record.leasedRunId ?? existing?.leasedRunId ?? null : record.leasedRunId ?? null,
       rateLimit: {
         minDelayMs: Number(record.rateLimit?.minDelayMs ?? existing?.rateLimit?.minDelayMs ?? 0),
+        maxDelayMs: record.rateLimit?.maxDelayMs ?? existing?.rateLimit?.maxDelayMs ?? null,
         maxPerMinute: record.rateLimit?.maxPerMinute ?? existing?.rateLimit?.maxPerMinute ?? null
       },
       sessionCheck: {
@@ -230,6 +234,30 @@ export class StudioStore {
     const runs = await this.#readJson(this.runsFile, []);
     return runs
       .sort((a, b) => String(b.queuedAt).localeCompare(String(a.queuedAt)))
+      .slice(0, limit);
+  }
+
+  async savePickerEvent(event) {
+    const normalized = normalizePickerEvent(event, { clock: this.clock });
+    const events = await this.#readJson(this.pickerEventsFile, []);
+    events.push(normalized);
+    const next = events
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+      .slice(-200);
+    await this.#writeJson(this.pickerEventsFile, next);
+    await this.appendAudit({
+      type: "picker.event_received",
+      pickerEventId: normalized.id,
+      selector: normalized.recommendedSelector,
+      confidence: normalized.confidence
+    });
+    return normalized;
+  }
+
+  async listPickerEvents({ limit = 20 } = {}) {
+    const events = await this.#readJson(this.pickerEventsFile, []);
+    return events
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
       .slice(0, limit);
   }
 
@@ -757,7 +785,7 @@ function createDefaultProfiles(clock = () => new Date()) {
       headless: true,
       status: "ready",
       leasedRunId: null,
-      rateLimit: { minDelayMs: 0, maxPerMinute: null },
+      rateLimit: { minDelayMs: 0, maxDelayMs: null, maxPerMinute: null },
       sessionCheck: {
         platform: "example.local",
         url: "https://example.local/search",
@@ -784,7 +812,7 @@ function createDefaultProfiles(clock = () => new Date()) {
       headless: false,
       status: "ready",
       leasedRunId: null,
-      rateLimit: { minDelayMs: 1000, maxPerMinute: 20 },
+      rateLimit: { minDelayMs: 1000, maxDelayMs: 2400, maxPerMinute: 20 },
       sessionCheck: {
         platform: "",
         url: "",

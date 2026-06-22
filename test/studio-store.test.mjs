@@ -28,6 +28,21 @@ test("studio store seeds workflow and queue completes a dry-run", async () => {
     assert.equal(completed.outputs.title, "Clear storage case supplier");
     assert.ok((await store.readRunEvents(run.id)).length > 0);
     assert.ok((await store.listRunArtifacts(run.id)).some((artifact) => artifact.name === "dry-run-search-result.txt"));
+
+    const delayedRun = await store.createRun({
+      workflowId: workflows[0].id,
+      mode: "dry-run",
+      input: workflows[0].defaultRun.input,
+      context: workflows[0].defaultRun.context,
+      driverConfig: {
+        ...workflows[0].defaultRun.driverConfig,
+        humanTiming: { enabled: true, minDelayMs: 1, maxDelayMs: 1 }
+      }
+    });
+    queue.enqueue(delayedRun.id);
+    await waitForRun(store, delayedRun.id);
+    const delayedEvents = await store.readRunEvents(delayedRun.id);
+    assert.ok(delayedEvents.some((event) => event.type === "step.delay" && event.delayMs === 1));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -75,6 +90,37 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     });
     assert.equal(savedRegistryItem.item.name, "Custom Site");
     assert.ok(savedRegistryItem.registry.sites.some((site) => site.id === "custom-site"));
+
+    const pickerEvent = await store.savePickerEvent({
+      url: "https://www.douyin.com/",
+      title: "抖音",
+      field: "searchBox",
+      target: {
+        tagName: "input",
+        attributes: {
+          "data-e2e": "searchbar-input",
+          placeholder: "搜索"
+        },
+        classList: ["search-input"],
+        rect: { x: 20, y: 30, width: 320, height: 36 }
+      },
+      selectorCandidates: [
+        {
+          selector: "input[data-e2e=\"searchbar-input\"]",
+          source: "attribute:data-e2e",
+          score: 95,
+          matchCount: 1,
+          visibleCount: 1,
+          unique: true,
+          stable: true
+        }
+      ]
+    });
+    assert.equal(pickerEvent.recommendedSelector, "input[data-e2e=\"searchbar-input\"]");
+    assert.equal(pickerEvent.targetIdentity.attributes["data-e2e"], "searchbar-input");
+    assert.equal(pickerEvent.suggestedAction, "fill");
+    const pickerEvents = await store.listPickerEvents();
+    assert.equal(pickerEvents[0].id, pickerEvent.id);
 
     const workflow = (await store.listWorkflows())[0];
     const workflowWithGraph = await store.saveWorkflow({
@@ -128,6 +174,7 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     const audit = await store.listAudit();
     assert.ok(audit.some((item) => item.type === "run.cancel_requested"));
     assert.ok(audit.some((item) => item.type === "bundle.imported"));
+    assert.ok(audit.some((item) => item.type === "picker.event_received"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

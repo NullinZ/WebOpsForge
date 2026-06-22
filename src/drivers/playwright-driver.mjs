@@ -43,28 +43,32 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
       return { url: page.url() };
     },
-    async waitFor({ selector, state = "visible", timeoutMs }) {
-      await page.locator(selector).waitFor({ state, timeout: timeoutMs });
+    async waitFor({ selector, state = "visible", timeoutMs, targetIdentity = null }) {
+      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      await locator.waitFor({ state, timeout: timeoutMs });
       return { selector, state };
     },
-    async click({ selector, timeoutMs }) {
-      await page.locator(selector).click({ timeout: timeoutMs });
+    async click({ selector, timeoutMs, targetIdentity = null }) {
+      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      await locator.click({ timeout: timeoutMs });
       return { selector };
     },
-    async fill({ selector, value, timeoutMs, redact = false }) {
-      await page.locator(selector).fill(String(value), { timeout: timeoutMs });
+    async fill({ selector, value, timeoutMs, redact = false, targetIdentity = null }) {
+      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      await locator.fill(String(value), { timeout: timeoutMs });
       return { selector, filled: true, redacted: redact };
     },
-    async press({ selector = null, key, timeoutMs }) {
+    async press({ selector = null, key, timeoutMs, targetIdentity = null }) {
       if (selector) {
-        await page.locator(selector).press(key, { timeout: timeoutMs });
+        const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+        await locator.press(key, { timeout: timeoutMs });
       } else {
         await page.keyboard.press(key);
       }
       return { selector, key };
     },
-    async extract({ selector, mode = "text", attribute = null, timeoutMs }) {
-      const locator = page.locator(selector);
+    async extract({ selector, mode = "text", attribute = null, timeoutMs, targetIdentity = null }) {
+      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
       await locator.waitFor({ state: "attached", timeout: timeoutMs });
       if (mode === "attribute") {
         return { selector, mode, attribute, value: await locator.getAttribute(attribute, { timeout: timeoutMs }) };
@@ -105,6 +109,131 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       }
     }
   };
+}
+
+async function resolveTargetLocator(page, { selector, timeoutMs, targetIdentity = null }) {
+  if (!targetIdentity) return page.locator(selector);
+
+  const candidates = candidateSelectors(selector, targetIdentity);
+  const attempts = [];
+  const minScore = Number(targetIdentity.matchPolicy?.minScore ?? 28);
+  const ambiguityMargin = Number(targetIdentity.matchPolicy?.ambiguityMargin ?? 8);
+
+  for (const [index, candidate] of candidates.entries()) {
+    const locator = page.locator(candidate);
+    try {
+      const waitTimeout = index === 0
+        ? timeoutMs
+        : Math.min(Number(timeoutMs ?? 10_000), 1200);
+      await locator.first().waitFor({ state: "attached", timeout: waitTimeout });
+    } catch (error) {
+      attempts.push({ selector: candidate, status: "missing", message: error.message });
+      continue;
+    }
+
+    const scored = await locator.evaluateAll(scoreElementsForIdentity, targetIdentity);
+    const visibleScored = targetIdentity.matchPolicy?.requireVisible === false
+      ? scored
+      : scored.filter((item) => item.visible);
+    const ranked = visibleScored.sort((a, b) => b.score - a.score);
+    const top = ranked[0];
+    const second = ranked[1];
+    attempts.push({
+      selector: candidate,
+      status: top ? "scored" : "no-visible-match",
+      count: scored.length,
+      visibleCount: visibleScored.length,
+      topScore: top?.score ?? 0,
+      secondScore: second?.score ?? 0
+    });
+
+    if (!top || top.score < minScore) continue;
+    if (ranked.length === 1 || top.score - (second?.score ?? 0) >= ambiguityMargin) {
+      return locator.nth(top.index);
+    }
+  }
+
+  throw new BrowserActionError(`Target identity could not be matched safely for selector: ${selector}`, {
+    details: {
+      selector,
+      recommendedSelector: targetIdentity.recommendedSelector ?? null,
+      minScore,
+      ambiguityMargin,
+      attempts
+    }
+  });
+}
+
+function candidateSelectors(selector, targetIdentity) {
+  const selectors = [
+    targetIdentity.recommendedSelector,
+    selector,
+    ...(targetIdentity.selectorCandidates ?? []).map((candidate) => candidate?.selector)
+  ];
+  return [...new Set(selectors.map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+function scoreElementsForIdentity(nodes, identity) {
+  const weights = {
+    "data-e2e": 34,
+    "data-testid": 34,
+    "data-test": 32,
+    "data-cy": 32,
+    "aria-label": 24,
+    placeholder: 24,
+    name: 20,
+    role: 18,
+    type: 14,
+    title: 14,
+    href: 10,
+    id: 18
+  };
+  const expectedAttributes = identity.attributes || {};
+  const expectedClasses = Array.isArray(identity.classList) ? identity.classList : [];
+  const expectedText = normalizeText(identity.text || identity.labelText || identity.accessibleName || "");
+
+  return nodes.map((node, index) => {
+    const rect = node.getBoundingClientRect();
+    const visible = rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== "hidden" && getComputedStyle(node).display !== "none";
+    let score = visible ? 6 : 0;
+    const tagName = node.nodeName.toLowerCase();
+    if (identity.tagName && tagName === String(identity.tagName).toLowerCase()) score += 10;
+
+    for (const [name, expectedValue] of Object.entries(expectedAttributes)) {
+      const actualValue = node.getAttribute(name);
+      if (!expectedValue || !actualValue) continue;
+      if (actualValue === expectedValue) {
+        score += weights[name] ?? (name.startsWith("data-") ? 24 : 8);
+      } else if (name === "href" && actualValue.includes(expectedValue)) {
+        score += 6;
+      }
+    }
+
+    const classMatches = expectedClasses.filter((className) => node.classList.contains(className)).length;
+    score += Math.min(classMatches * 3, 12);
+
+    const actualText = normalizeText([
+      node.getAttribute("aria-label"),
+      node.getAttribute("placeholder"),
+      node.getAttribute("title"),
+      node.textContent
+    ].filter(Boolean).join(" "));
+    if (expectedText && actualText) {
+      if (actualText === expectedText) score += 20;
+      else if (actualText.includes(expectedText) || expectedText.includes(actualText)) score += 10;
+    }
+
+    return {
+      index,
+      score,
+      visible,
+      tagName
+    };
+  });
+
+  function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
+  }
 }
 
 async function importPlaywright() {

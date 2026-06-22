@@ -11,6 +11,7 @@ import {
   createDryRunDriver,
   createFileEvidenceStore,
   createMemoryEvidenceStore,
+  createRateLimiter,
   defineWorkflow
 } from "../src/index.mjs";
 
@@ -67,6 +68,69 @@ test("runs a workflow and records evidence", async () => {
   assert.equal(evidenceStore.list()[0].type, "workflow.started");
   assert.equal(evidenceStore.list().at(-1).type, "workflow.completed");
   assert.equal(evidenceStore.artifacts().size, 1);
+});
+
+test("applies a random delay event before every workflow step", async () => {
+  const evidenceStore = createMemoryEvidenceStore();
+  const runner = new WebOpsRunner({
+    driver: createSearchDriver(),
+    evidenceStore,
+    rateLimiter: createRateLimiter({
+      minDelayMs: 1,
+      maxDelayMs: 1,
+      random: () => 0
+    })
+  });
+
+  await runner.run(createSearchWorkflow(), {
+    input: { query: "storage case" },
+    runId: "delay-test"
+  });
+
+  const delayEvents = evidenceStore.list().filter((event) => event.type === "step.delay");
+  assert.deepEqual(delayEvents.map((event) => event.stepId), ["open", "fill", "click", "extract", "assert", "shot"]);
+  assert.ok(delayEvents.every((event) => event.delayMs === 1));
+});
+
+test("passes target identity through browser actions", async () => {
+  const calls = [];
+  const targetIdentity = {
+    version: 1,
+    tagName: "input",
+    attributes: { "data-e2e": "searchbar-input" },
+    classList: [],
+    selectorCandidates: [{ selector: "input[data-e2e=\"searchbar-input\"]" }],
+    recommendedSelector: "input[data-e2e=\"searchbar-input\"]",
+    matchPolicy: { minScore: 28, ambiguityMargin: 8, requireVisible: true, preferUnique: true }
+  };
+  const runner = new WebOpsRunner({
+    driver: {
+      async goto() {},
+      async fill(args) {
+        calls.push(args);
+      }
+    },
+    evidenceStore: createMemoryEvidenceStore()
+  });
+
+  await runner.run(defineWorkflow({
+    name: "target-identity-test",
+    steps: [
+      { id: "open", action: "goto", url: "https://example.local" },
+      {
+        id: "fillSearch",
+        action: "fill",
+        selector: "input[data-e2e=\"searchbar-input\"]",
+        value: "{{input.query}}",
+        targetIdentity
+      }
+    ]
+  }), {
+    input: { query: "装修" }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].targetIdentity, targetIdentity);
 });
 
 test("throws a validation error for unresolved templates", async () => {

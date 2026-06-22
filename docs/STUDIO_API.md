@@ -156,9 +156,18 @@ Request:
       "searchSuppliers": "browser"
     }
   },
-  "driverConfig": {}
+  "driverConfig": {
+    "humanTiming": {
+      "enabled": true,
+      "minDelayMs": 1000,
+      "maxDelayMs": 2400,
+      "maxPerMinute": 20
+    }
+  }
 }
 ```
+
+`humanTiming` adds a random delay before every workflow node. Playwright runs enable it by default from the selected profile's `rateLimit` values; dry-run runs stay immediate unless `humanTiming.enabled` is set.
 
 ### `GET /api/runs`
 

@@ -8,6 +8,7 @@ export { createPlaywrightDriver } from "./drivers/playwright-driver.mjs";
 export { StudioStore } from "./studio/store.mjs";
 export { createRunQueue } from "./studio/run-queue.mjs";
 export { probeProfileSession } from "./studio/profile-session.mjs";
+export { normalizePickerEvent, createTargetIdentityFromPickerEvent } from "./selector-identity.mjs";
 export {
   WebOpsForgeError,
   ActionValidationError,

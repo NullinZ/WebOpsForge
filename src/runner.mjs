@@ -59,13 +59,24 @@ export class WebOpsRunner {
     const timeoutMs = resolved.timeoutMs ?? workflow.defaults.timeoutMs;
 
     await this.policy?.beforeStep?.({ step: resolved, state });
-    await this.rateLimiter.wait({ step: resolved, state });
     await this.evidenceStore.append({
       type: "step.started",
       runId: state.runId,
       stepId: resolved.id,
       action: resolved.action,
       startedAt
+    });
+    await this.rateLimiter.wait({
+      step: resolved,
+      state,
+      onDelay: (delay) => this.evidenceStore.append({
+        type: "step.delay",
+        runId: state.runId,
+        stepId: resolved.id,
+        action: resolved.action,
+        ...delay,
+        createdAt: this.clock().toISOString()
+      })
     });
 
     try {
@@ -113,19 +124,20 @@ export class WebOpsRunner {
       case "goto":
         return this.driver.goto({ url: step.url, timeoutMs, state });
       case "waitFor":
-        return this.driver.waitFor({ selector: step.selector, state: step.state ?? "visible", timeoutMs });
+        return this.driver.waitFor({ selector: step.selector, state: step.state ?? "visible", timeoutMs, targetIdentity: step.targetIdentity ?? null });
       case "click":
-        return this.driver.click({ selector: step.selector, timeoutMs });
+        return this.driver.click({ selector: step.selector, timeoutMs, targetIdentity: step.targetIdentity ?? null });
       case "fill":
-        return this.driver.fill({ selector: step.selector, value: step.value, timeoutMs, redact: Boolean(step.redact) });
+        return this.driver.fill({ selector: step.selector, value: step.value, timeoutMs, redact: Boolean(step.redact), targetIdentity: step.targetIdentity ?? null });
       case "press":
-        return this.driver.press({ selector: step.selector ?? null, key: step.key, timeoutMs });
+        return this.driver.press({ selector: step.selector ?? null, key: step.key, timeoutMs, targetIdentity: step.targetIdentity ?? null });
       case "extract":
         return this.driver.extract({
           selector: step.selector,
           mode: step.mode ?? "text",
           attribute: step.attribute ?? null,
-          timeoutMs
+          timeoutMs,
+          targetIdentity: step.targetIdentity ?? null
         });
       case "apiCall":
         return executeApiCall({ step, driver: this.driver, apiClient: this.apiClient, timeoutMs });

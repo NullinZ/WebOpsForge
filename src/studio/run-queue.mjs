@@ -1,7 +1,13 @@
 import { createFileEvidenceStore } from "../evidence.mjs";
 import { WebOpsRunner } from "../runner.mjs";
+import { createRateLimiter } from "../rate-limit.mjs";
 import { createDryRunDriver } from "../drivers/dry-run-driver.mjs";
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
+
+const DEFAULT_HUMAN_TIMING = {
+  minDelayMs: 800,
+  maxDelayMs: 2200
+};
 
 export function createRunQueue({ store, concurrency = 1, clock = () => new Date() }) {
   const pending = [];
@@ -85,7 +91,8 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     try {
       leasedProfile = await store.leaseProfile(run.profileId, runId);
       driver = await createDriver(run, leasedProfile);
-      const runner = new WebOpsRunner({ driver, evidenceStore, clock });
+      const rateLimiter = createRunRateLimiter(run, leasedProfile);
+      const runner = new WebOpsRunner({ driver, evidenceStore, rateLimiter, clock });
       const result = await runner.run(workflowRecord.workflow, {
         input: run.input,
         context: run.context,
@@ -134,6 +141,53 @@ function mergeDriverConfig(driverConfig, profile) {
     };
   }
   return driverConfig;
+}
+
+function createRunRateLimiter(run, profile = null) {
+  const timing = resolveHumanTiming(run, profile);
+  if (!timing.enabled && !timing.maxPerMinute) return null;
+  return createRateLimiter({
+    minDelayMs: timing.enabled ? timing.minDelayMs : 0,
+    maxDelayMs: timing.enabled ? timing.maxDelayMs : 0,
+    maxPerMinute: timing.maxPerMinute
+  });
+}
+
+function resolveHumanTiming(run, profile = null) {
+  const raw = run.driverConfig?.humanTiming;
+  const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const isPlaywright = run.mode === "playwright" || profile?.mode === "playwright";
+  const explicitEnabled = typeof raw === "boolean" ? raw : rawObject.enabled;
+  const enabled = explicitEnabled == null ? isPlaywright : Boolean(explicitEnabled);
+  const profileRateLimit = profile?.rateLimit ?? {};
+  const fixedDelay = typeof raw === "number" ? raw : null;
+  const configuredMin = fixedDelay ?? rawObject.minDelayMs;
+  const profileMin = numberOrNull(profileRateLimit.minDelayMs);
+  const minDelayMs = enabled
+    ? normalizeDelay(configuredMin ?? (profileMin && profileMin > 0 ? profileMin : DEFAULT_HUMAN_TIMING.minDelayMs), DEFAULT_HUMAN_TIMING.minDelayMs)
+    : 0;
+  const configuredMax = fixedDelay ?? rawObject.maxDelayMs ?? profileRateLimit.maxDelayMs;
+  const maxDelayMs = enabled
+    ? Math.max(minDelayMs, normalizeDelay(configuredMax ?? DEFAULT_HUMAN_TIMING.maxDelayMs, DEFAULT_HUMAN_TIMING.maxDelayMs))
+    : 0;
+  const maxPerMinute = rawObject.maxPerMinute ?? profileRateLimit.maxPerMinute ?? null;
+  return {
+    enabled,
+    minDelayMs,
+    maxDelayMs,
+    maxPerMinute
+  };
+}
+
+function normalizeDelay(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.round(number));
+}
+
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function serializeError(error) {

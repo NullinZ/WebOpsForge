@@ -17,6 +17,10 @@ const queue = createRunQueue({ store, concurrency: Number(process.env.WEBOPS_FOR
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
+    if (req.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+      sendJson(res, 204, {});
+      return;
+    }
     if (url.pathname.startsWith("/api/")) {
       await handleApi(req, res, url);
       return;
@@ -94,7 +98,29 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (parts[0] === "picker") {
+    await handlePicker(req, res, parts, url);
+    return;
+  }
+
   sendJson(res, 404, { error: { message: "API route not found" } });
+}
+
+async function handlePicker(req, res, parts, url) {
+  if (parts[1] === "events") {
+    if (req.method === "GET") {
+      const limit = Number(url.searchParams.get("limit") ?? 20);
+      sendJson(res, 200, { events: await store.listPickerEvents({ limit }) });
+      return;
+    }
+    if (req.method === "POST") {
+      const event = await store.savePickerEvent(await readJsonBody(req));
+      sendJson(res, 201, { event });
+      return;
+    }
+  }
+
+  sendJson(res, 404, { error: { message: "Picker route not found" } });
 }
 
 async function handleRegistry(req, res, parts) {
@@ -391,9 +417,12 @@ async function serveArtifact(res, runId, artifactName) {
 function sendJson(res, statusCode, value) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type"
   });
-  res.end(JSON.stringify(value, null, 2));
+  res.end(statusCode === 204 ? "" : JSON.stringify(value, null, 2));
 }
 
 function statusFromError(error) {

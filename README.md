@@ -140,7 +140,7 @@ console.log(evidenceStore.list());
 ## Real Browser Driver
 
 ```js
-import { WebOpsRunner, createPlaywrightDriver } from "webops-forge";
+import { WebOpsRunner, createPlaywrightDriver, createRateLimiter } from "webops-forge";
 
 const driver = await createPlaywrightDriver({
   browserType: "chromium",
@@ -148,10 +148,30 @@ const driver = await createPlaywrightDriver({
   headless: false
 });
 
-const runner = new WebOpsRunner({ driver });
+const runner = new WebOpsRunner({
+  driver,
+  rateLimiter: createRateLimiter({
+    minDelayMs: 800,
+    maxDelayMs: 2200,
+    maxPerMinute: 20
+  })
+});
 ```
 
 Use persistent profiles only on controlled machines. Do not store credentials or customer data inside reusable open-source workflows.
+
+`minDelayMs` and `maxDelayMs` add a random pre-step pause before every workflow node. Studio enables this automatically for Playwright runs; override it per run with `driverConfig.humanTiming`:
+
+```json
+{
+  "humanTiming": {
+    "enabled": true,
+    "minDelayMs": 1000,
+    "maxDelayMs": 2400,
+    "maxPerMinute": 20
+  }
+}
+```
 
 ## Profiles And Logged-In Accounts
 

@@ -74,11 +74,11 @@ export interface RunnerResult {
 export interface BrowserDriver {
   kind?: string;
   goto?(args: { url: string; timeoutMs?: number | null; state?: RunnerState }): Promise<unknown>;
-  waitFor?(args: { selector: string; state?: string; timeoutMs?: number | null }): Promise<unknown>;
-  click?(args: { selector: string; timeoutMs?: number | null }): Promise<unknown>;
-  fill?(args: { selector: string; value: unknown; timeoutMs?: number | null; redact?: boolean }): Promise<unknown>;
-  press?(args: { selector?: string | null; key: string; timeoutMs?: number | null }): Promise<unknown>;
-  extract?(args: { selector: string; mode?: string; attribute?: string | null; timeoutMs?: number | null }): Promise<{ value: unknown }>;
+  waitFor?(args: { selector: string; state?: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
+  click?(args: { selector: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
+  fill?(args: { selector: string; value: unknown; timeoutMs?: number | null; redact?: boolean; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
+  press?(args: { selector?: string | null; key: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
+  extract?(args: { selector: string; mode?: string; attribute?: string | null; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<{ value: unknown }>;
   apiCall?(args: ApiRequest): Promise<ApiResult>;
   screenshot?(args: { fullPage?: boolean; name?: string }): Promise<{ contentType?: string; bytes?: Uint8Array; text?: string } | null | undefined>;
   currentUrl?(): Promise<string>;
@@ -96,7 +96,18 @@ export interface MemoryEvidenceStore extends EvidenceStore {
 }
 
 export interface RateLimiter {
-  wait(args?: { step?: NormalizedWorkflowStep; state?: RunnerState }): Promise<void>;
+  wait(args?: {
+    step?: NormalizedWorkflowStep;
+    state?: RunnerState;
+    onDelay?: (delay: RateLimitDelay) => Promise<void> | void;
+  }): Promise<RateLimitDelay | void>;
+}
+
+export interface RateLimitDelay {
+  delayMs: number;
+  randomDelayMs: number;
+  windowDelayMs: number;
+  maxPerMinute: number | null;
 }
 
 export interface ApiRequest {
@@ -148,11 +159,18 @@ export class WebOpsRunner {
 export function defineWorkflow(workflow: Workflow): NormalizedWorkflow;
 export function normalizeWorkflow(workflow: Workflow): NormalizedWorkflow;
 export function validateStep(step: WorkflowStep, index?: number): NormalizedWorkflowStep;
+export function normalizePickerEvent(event: Record<string, unknown>, options?: { clock?: () => Date }): PickerEvent;
+export function createTargetIdentityFromPickerEvent(event: Record<string, unknown>): TargetIdentity;
 
 export function createMemoryEvidenceStore(): MemoryEvidenceStore;
 export function createFileEvidenceStore(options: { dir: string }): EvidenceStore;
 
-export function createRateLimiter(options?: { minDelayMs?: number; maxPerMinute?: number | null }): RateLimiter;
+export function createRateLimiter(options?: {
+  minDelayMs?: number;
+  maxDelayMs?: number | null;
+  maxPerMinute?: number | null;
+  random?: () => number;
+}): RateLimiter;
 export function createFetchApiClient(options?: { fetchImpl?: typeof fetch }): ApiClient;
 export function executeApiCall(options: { step: NormalizedWorkflowStep; driver?: BrowserDriver; apiClient: ApiClient; timeoutMs?: number | null }): Promise<ApiResult>;
 
@@ -219,6 +237,61 @@ export interface StudioRunRecord {
   evidenceDir: string;
 }
 
+export interface SelectorCandidate {
+  selector: string;
+  source: string;
+  reason: string;
+  score: number;
+  matchCount: number | null;
+  visibleCount: number | null;
+  unique: boolean;
+  stable: boolean;
+}
+
+export interface TargetIdentity {
+  version: number;
+  tagName: string;
+  role?: string;
+  inputType?: string;
+  attributes: Record<string, string>;
+  classList: string[];
+  text: string;
+  labelText: string;
+  accessibleName: string;
+  rect: { x: number; y: number; width: number; height: number } | null;
+  pageUrl: string;
+  frameUrl: string;
+  selectorCandidates: SelectorCandidate[];
+  recommendedSelector: string;
+  confidence: number;
+  matchPolicy: {
+    minScore: number;
+    ambiguityMargin: number;
+    requireVisible: boolean;
+    preferUnique: boolean;
+  };
+}
+
+export interface PickerEvent {
+  id: string;
+  source: string;
+  field: string;
+  suggestedAction: "click" | "fill" | "press" | "extract" | "waitFor" | string;
+  recommendedSelector: string;
+  selectorCandidates: SelectorCandidate[];
+  targetIdentity: TargetIdentity;
+  pickedFrom: {
+    url: string;
+    frameUrl: string;
+    title: string;
+    platform: string;
+    tabId: unknown;
+    timestamp: number;
+  };
+  confidence: number;
+  createdAt: string;
+}
+
 export interface StudioProfileRecord {
   id: string;
   name: string;
@@ -233,6 +306,7 @@ export interface StudioProfileRecord {
   leasedRunId: string | null;
   rateLimit: {
     minDelayMs: number;
+    maxDelayMs?: number | null;
     maxPerMinute: number | null;
   };
   sessionCheck: {

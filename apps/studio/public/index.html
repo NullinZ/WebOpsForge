@@ -75,6 +75,7 @@
                 <p class="section-note" data-i18n="workflowGraphNote">Drag nodes to arrange the execution map.</p>
               </div>
               <div class="button-row">
+                <button class="secondary" id="addGraphNodeButton" type="button" data-i18n="addNode">Add Node</button>
                 <button class="secondary" id="autoLayoutButton" type="button" data-i18n="autoLayout">Auto Layout</button>
                 <button class="primary" id="saveGraphWorkflowButton" type="button" data-i18n="save">Save</button>
               </div>
@@ -132,7 +133,13 @@
                     <input id="nodeEditorName" autocomplete="off" />
                   </div>
                   <div>
-                    <label for="nodeEditorSelector" data-i18n="selector">Selector</label>
+                    <div class="field-label-row">
+                      <label for="nodeEditorSelector" data-i18n="selector">Selector</label>
+                      <div class="inline-actions">
+                        <button class="compact-button" id="refreshPickerButton" type="button" data-i18n="refreshPicks">Refresh Picks</button>
+                        <button class="compact-button" id="applyLatestPickButton" type="button" data-i18n="applyLatestPick">Apply Latest</button>
+                      </div>
+                    </div>
                     <input id="nodeEditorSelector" autocomplete="off" />
                   </div>
                   <div>
@@ -160,6 +167,15 @@
                     <input id="nodeEditorExtract" autocomplete="off" />
                   </div>
                 </div>
+                <section class="picker-panel" id="nodePickerPanel">
+                  <div class="picker-panel-head">
+                    <div>
+                      <strong data-i18n="browserPicker">Browser Picker</strong>
+                      <span id="latestPickerStatus" class="picker-status">-</span>
+                    </div>
+                  </div>
+                  <div class="picker-event-list" id="pickerEventList"></div>
+                </section>
                 <label for="nodeEditorJson" data-i18n="definitionJson">Definition JSON</label>
                 <textarea id="nodeEditorJson" spellcheck="false"></textarea>
               </div>

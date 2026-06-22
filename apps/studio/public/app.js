@@ -3,6 +3,8 @@ const state = {
   profiles: [],
   runs: [],
   audit: [],
+  pickerEvents: [],
+  selectedPickerEventId: null,
   selectedWorkflowId: null,
   selectedProfileId: null,
   selectedRunId: null,
@@ -238,6 +240,10 @@ const I18N = {
     buildWorkflow: "Build Workflow",
     cancel: "Cancel",
     checkSession: "Check Session",
+    apply: "Apply",
+    applyLatestPick: "Apply Latest",
+    browserPicker: "Browser Picker",
+    confidence: "Confidence",
     context: "Context",
     dataDir: "data: {path}",
     delete: "Delete",
@@ -268,6 +274,7 @@ const I18N = {
     actionRegistry: "Action Registry",
     actionType: "Action Type",
     actions: "Actions",
+    addNode: "Add Node",
     loginState: "Login State",
     maxPerMinute: "Max Per Minute",
     method: "Method",
@@ -284,8 +291,10 @@ const I18N = {
     newWorkflow: "New Workflow",
     noArtifacts: "No artifacts",
     noAuditRecords: "No audit records",
+    noPicks: "No browser picks",
     noRegistryRecords: "No resources registered",
     noWorkflowSelected: "No workflow selected",
+    nodeAdded: "Node added. Edit it to define the next step.",
     noProfile: "no profile",
     none: "none",
     operationModes: "Operation Modes",
@@ -303,6 +312,7 @@ const I18N = {
     profileSaved: "Profile saved",
     profiles: "Profiles",
     refresh: "Refresh",
+    refreshPicks: "Refresh Picks",
     registry: "Registry",
     registryCenter: "Registry Center",
     registryCenterNote: "Register sites, pages, page actions, and reusable operations before composing workflows.",
@@ -328,6 +338,7 @@ const I18N = {
     schemaJson: "Schema JSON",
     selectedRun: "Selected Run",
     selector: "Selector",
+    selectedPickApplied: "Picker event applied to node.",
     sessionCheckUrl: "Session Check URL",
     sessionResult: "Session {state}{account}",
     site: "Site",
@@ -364,6 +375,10 @@ const I18N = {
     buildWorkflow: "生成工作流",
     cancel: "取消",
     checkSession: "检查会话",
+    apply: "应用",
+    applyLatestPick: "应用最新",
+    browserPicker: "浏览器拾取",
+    confidence: "置信度",
     context: "上下文",
     dataDir: "数据目录：{path}",
     delete: "删除",
@@ -394,6 +409,7 @@ const I18N = {
     actionRegistry: "页面动作注册",
     actionType: "动作类型",
     actions: "动作",
+    addNode: "新增节点",
     loginState: "登录态",
     maxPerMinute: "每分钟上限",
     method: "请求方法",
@@ -410,8 +426,10 @@ const I18N = {
     newWorkflow: "新建工作流",
     noArtifacts: "暂无产物",
     noAuditRecords: "暂无审计记录",
+    noPicks: "暂无浏览器拾取",
     noRegistryRecords: "暂无注册资源",
     noWorkflowSelected: "未选择工作流",
+    nodeAdded: "节点已新增，请编辑它来定义下一步。",
     noProfile: "不使用 Profile",
     none: "无",
     operationModes: "动作执行方式",
@@ -429,6 +447,7 @@ const I18N = {
     profileSaved: "Profile 已保存",
     profiles: "Profiles",
     refresh: "刷新",
+    refreshPicks: "刷新拾取",
     registry: "注册中心",
     registryCenter: "注册中心",
     registryCenterNote: "先注册站点、页面、页面动作和可复用业务操作，再把它们编排成工作流。",
@@ -454,6 +473,7 @@ const I18N = {
     schemaJson: "结构 JSON",
     selectedRun: "当前运行",
     selector: "选择器",
+    selectedPickApplied: "已把拾取结果应用到节点。",
     sessionCheckUrl: "会话检查 URL",
     sessionResult: "会话 {state}{account}",
     site: "站点",
@@ -574,6 +594,10 @@ const elements = {
   nodeEditorAction: document.querySelector("#nodeEditorAction"),
   nodeEditorName: document.querySelector("#nodeEditorName"),
   nodeEditorSelector: document.querySelector("#nodeEditorSelector"),
+  refreshPickerButton: document.querySelector("#refreshPickerButton"),
+  applyLatestPickButton: document.querySelector("#applyLatestPickButton"),
+  latestPickerStatus: document.querySelector("#latestPickerStatus"),
+  pickerEventList: document.querySelector("#pickerEventList"),
   nodeEditorUrl: document.querySelector("#nodeEditorUrl"),
   nodeEditorValue: document.querySelector("#nodeEditorValue"),
   nodeEditorKey: document.querySelector("#nodeEditorKey"),
@@ -623,6 +647,23 @@ document.querySelector("#runButton").addEventListener("click", () => runSelected
 document.querySelector("#saveWorkflowButton").addEventListener("click", () => saveSelectedWorkflow());
 document.querySelector("#validateWorkflowButton").addEventListener("click", () => validateSelectedWorkflow());
 document.querySelector("#newWorkflowButton").addEventListener("click", () => createBlankWorkflow());
+document.querySelector("#addGraphNodeButton").addEventListener("click", () => addGraphNode());
+elements.refreshPickerButton.addEventListener("click", async () => {
+  await loadPickerEvents();
+  renderPickerPanel();
+});
+elements.applyLatestPickButton.addEventListener("click", () => applyPickerEventToSelectedNode(state.pickerEvents[0]?.id));
+elements.pickerEventList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-picker-apply]");
+  if (button) {
+    applyPickerEventToSelectedNode(button.dataset.pickerApply);
+    return;
+  }
+  const row = event.target.closest("[data-picker-id]");
+  if (!row) return;
+  state.selectedPickerEventId = row.dataset.pickerId;
+  renderPickerPanel();
+});
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
@@ -1174,6 +1215,72 @@ function renderGraphNodeEditor() {
   } finally {
     state.nodeEditorSyncing = false;
   }
+}
+
+function addGraphNode() {
+  const workflow = readWorkflowDraft();
+  if (!workflow || !Array.isArray(workflow.steps)) return;
+
+  const match = state.selectedGraphNodeId ? findWorkflowNode(workflow, state.selectedGraphNodeId) : null;
+  const newStep = createGraphNodeStep(workflow, match);
+  insertGraphNodeStep(workflow, match, newStep);
+
+  state.selectedGraphNodeId = newStep.id;
+  commitWorkflowDraft(workflow);
+  if (state.selectedWorkflowId) saveGraphPositions(state.selectedWorkflowId, state.graphPositions);
+  renderGraph();
+  revealGraphNodeEditor();
+  showToast(t("nodeAdded"));
+}
+
+function createGraphNodeStep(workflow, match) {
+  const topLevel = match?.kind !== "browser";
+  const base = topLevel ? "next-step" : `${workflow.steps?.[match.topIndex]?.id ?? "operation"}.next-step`;
+  return {
+    id: uniqueWorkflowStepId(workflow, base),
+    action: "checkpoint",
+    label: topLevel ? "Next step" : "Next browser step"
+  };
+}
+
+function insertGraphNodeStep(workflow, match, newStep) {
+  if (match?.kind === "browser") {
+    const operation = workflow.steps[match.topIndex];
+    if (!Array.isArray(operation.browserSteps)) operation.browserSteps = [];
+    operation.browserSteps.splice(match.childIndex + 1, 0, newStep);
+    return;
+  }
+
+  const insertAt = match ? match.topIndex + 1 : workflow.steps.length;
+  workflow.steps.splice(insertAt, 0, newStep);
+}
+
+function uniqueWorkflowStepId(workflow, base) {
+  const existing = collectWorkflowStepIds(workflow);
+  const normalizedBase = slugify(base || "next-step") || "next-step";
+  if (!existing.has(normalizedBase)) return normalizedBase;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${normalizedBase}-${index}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+  return `${normalizedBase}-${Date.now().toString(36)}`;
+}
+
+function collectWorkflowStepIds(workflow) {
+  const ids = new Set();
+  for (const step of workflow.steps ?? []) {
+    collectWorkflowStepId(step, ids);
+  }
+  return ids;
+}
+
+function collectWorkflowStepId(step, ids) {
+  if (!step || typeof step !== "object") return;
+  if (step.id) ids.add(String(step.id));
+  for (const child of step.browserSteps ?? []) {
+    collectWorkflowStepId(child, ids);
+  }
+  if (step.api) collectWorkflowStepId(step.api, ids);
 }
 
 function revealGraphNodeEditor() {
