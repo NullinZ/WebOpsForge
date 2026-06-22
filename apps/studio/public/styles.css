@@ -134,6 +134,26 @@ label {
   text-transform: uppercase;
 }
 
+.field-label-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inline-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.compact-button {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .shell {
   height: 100vh;
   height: 100dvh;
@@ -771,6 +791,71 @@ h2 {
 
 .node-editor textarea {
   min-height: 180px;
+}
+
+.picker-panel {
+  margin: 12px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.picker-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.picker-panel-head strong {
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.picker-status {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.picker-event-list {
+  display: grid;
+  gap: 6px;
+}
+
+.picker-empty,
+.picker-event-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.picker-event-row.active {
+  padding-left: 8px;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.picker-event-main strong,
+.picker-event-main span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.picker-event-main strong {
+  font-size: 12px;
+}
+
+.picker-event-main span,
+.picker-event-meta,
+.picker-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.picker-event-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .triple-editors {
