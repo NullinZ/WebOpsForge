@@ -72,6 +72,7 @@ WebOps Studio is the local commercial-grade control surface for WebOps Forge.
 
 It includes:
 
+- operation builder for read-only list/detail/media workflows
 - workflow library and JSON editor
 - registry center for sites, pages, page actions, and reusable operations
 - dry-run and Playwright execution modes
@@ -84,8 +85,10 @@ It includes:
 - run cancellation and retry
 - persisted run history
 - evidence timeline
+- structured output preview for arrays, detail objects, and media URLs
 - artifact links for screenshots and dry-run captures
 - approval gates through the `approval` workflow action
+- blocked-state classification and recovery hints
 - audit trail
 - workflow validation
 - bundle import/export
@@ -203,6 +206,44 @@ The Studio registry models reusable web operations before they become workflows:
 
 Use the Registry tab to register these resources, then build a workflow from an operation. Private adapters can ship their own registry packs without putting credentials, account data, or proprietary selectors in the open-source package.
 
+## Adapter SDK
+
+Private platform integrations can register their sites, pages, actions, operations, workflows, and dry-run fixtures without copying Studio or runner code:
+
+```js
+import { createFixtureDriverConfig, createRegistryPack, defineAdapter } from "webops-forge";
+
+export const adapter = defineAdapter({
+  id: "example-marketplace-adapter",
+  name: "Example Marketplace Adapter",
+  registry: createRegistryPack({
+    sites: [{ id: "example", name: "Example", baseUrl: "https://example.local", status: "ready" }]
+  }),
+  fixtures: {
+    demo: {
+      pages: {
+        "https://example.local/search": {
+          selectors: {
+            ".card": {
+              items: [
+                {
+                  selectors: {
+                    ".title": { text: "Sample item" },
+                    "img": { attributes: { src: "/sample.jpg" } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+const driverConfig = createFixtureDriverConfig(adapter, "demo");
+```
+
 ## Workflow Actions
 
 Supported actions:
@@ -213,6 +254,10 @@ Supported actions:
 - `fill`: fill a field.
 - `press`: press a key.
 - `extract`: extract text, value, HTML, or an attribute.
+- `extractList`: extract repeated cards, table rows, or grid items into an array.
+- `extractDetail`: extract a page or panel into a named field object.
+- `extractMedia`: extract image/video URLs, posters, source candidates, and media attributes.
+- `paginate`: follow configured next-page links and write visited URLs when named.
 - `apiCall`: call an HTTP endpoint and optionally write the response value to outputs.
 - `operation`: wrap one business operation with switchable browser and API branches.
 - `approval`: require a policy or context approval before continuing.
@@ -273,6 +318,16 @@ WebOps Forge includes:
 - `createFileEvidenceStore({ dir })` for JSONL evidence plus artifacts.
 
 Evidence is deliberately structured so operators can see what happened without replaying a whole browser session.
+
+## Blocked States
+
+Runs classify common blockers into named states such as `login_required`, `captcha_or_verification`, `selector_drift`, `empty_result`, `navigation_timeout`, `rate_limited`, `permission_denied`, and `profile_busy`. The serialized run error includes:
+
+- `details.blockedState`
+- `details.recoveryHint`
+- `details.recoverable`
+
+Use `classifyRunFailure(error)` or `detectBlockedState(error)` when building custom queues or adapter test harnesses.
 
 ## API Surface
 

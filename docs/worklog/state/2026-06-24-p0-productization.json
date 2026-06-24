@@ -1,0 +1,40 @@
+{
+  "task_id": "2026-06-24-p0-productization",
+  "objective": "补全 WebOps Forge P0 商业化开源产品能力：结构化读取、主链路、输出复盘、blocked 分类和 adapter/fixture 骨架。",
+  "cwd": "/Users/nullin/GitHubO/WebOpsForge",
+  "repos": [
+    {
+      "path": "/Users/nullin/GitHubO/WebOpsForge",
+      "branch": "current",
+      "dirty_expected": true
+    }
+  ],
+  "phase": "complete",
+  "completed": [
+    "phase-0-baseline",
+    "phase-1-structured-extraction",
+    "phase-2-adapter-fixtures",
+    "phase-3-studio-main-path",
+    "phase-4-blocked-state",
+    "phase-5-validation-docs"
+  ],
+  "in_progress": null,
+  "pending": [],
+  "last_checkpoint": "2026-06-24T10:01:37+08:00",
+  "next_action": "P1 继续做 packaging 清理、可视化字段映射、CSV/JSON 导出和公开 demo。",
+  "artifacts": [
+    "docs/worklog/2026-06-24-p0-productization.md",
+    "docs/worklog/state/2026-06-24-p0-productization.json",
+    "backups/p0-productization-20260624/"
+  ],
+  "validation": {
+    "npm_test": "passed",
+    "npm_check": "passed",
+    "pack_dry_run": "passed",
+    "studio_api": "passed via isolated 4189 smoke server",
+    "browser_smoke": "passed",
+    "git_diff_check": "passed"
+  },
+  "blockers": [],
+  "notes_for_resume": "P0 baseline 已完成。继续做 P1 前先处理 WOF-P1-006 packaging 清理；当前 npm pack --dry-run 仍包含 docs/worklog，这是已登记的 P1 问题。P0 以统一 workflow/action/operation/adapter 模型落地，没有引入平行 DSL。"
+}

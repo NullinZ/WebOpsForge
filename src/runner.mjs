@@ -4,6 +4,7 @@ import { createRateLimiter } from "./rate-limit.mjs";
 import { normalizeWorkflow } from "./workflow.mjs";
 import { assertTemplateReady, getPath, resolveTemplates } from "./template.mjs";
 import { createFetchApiClient, executeApiCall } from "./api-client.mjs";
+import { classifyRunFailure } from "./blocked-state.mjs";
 
 export class WebOpsRunner {
   constructor({ driver = null, apiClient = createFetchApiClient(), evidenceStore = createMemoryEvidenceStore(), rateLimiter = null, policy = null, clock = () => new Date() } = {}) {
@@ -138,6 +139,34 @@ export class WebOpsRunner {
           attribute: step.attribute ?? null,
           timeoutMs,
           targetIdentity: step.targetIdentity ?? null
+        });
+      case "extractList":
+        return this.driver.extractList({
+          selector: step.selector,
+          fields: step.fields ?? {},
+          limit: step.limit ?? null,
+          timeoutMs,
+          targetIdentity: step.targetIdentity ?? null
+        });
+      case "extractDetail":
+        return this.driver.extractDetail({
+          fields: step.fields ?? {},
+          timeoutMs
+        });
+      case "extractMedia":
+        return this.driver.extractMedia({
+          selector: step.selector,
+          sources: step.sources ?? null,
+          limit: step.limit ?? null,
+          timeoutMs,
+          targetIdentity: step.targetIdentity ?? null
+        });
+      case "paginate":
+        return this.driver.paginate({
+          nextSelector: step.nextSelector,
+          maxPages: step.maxPages ?? 1,
+          waitForSelector: step.waitForSelector ?? null,
+          timeoutMs
         });
       case "apiCall":
         return executeApiCall({ step, driver: this.driver, apiClient: this.apiClient, timeoutMs });
@@ -284,8 +313,13 @@ function normalizeOperationMode(mode) {
 }
 
 function applyStepOutput(step, result, state) {
-  if (step.action === "extract") {
+  if (["extract", "extractList", "extractDetail", "extractMedia"].includes(step.action)) {
     state.outputs[step.name] = result.value;
+    return;
+  }
+  if (step.action === "paginate" && (step.name || step.output || step.outputName)) {
+    const name = step.name ?? step.output ?? step.outputName;
+    state.outputs[name] = result.value ?? result;
     return;
   }
   if ((step.action === "apiCall" || step.action === "operation") && (step.name || step.output || step.outputName)) {
@@ -315,11 +349,17 @@ function ensureArtifactName(name, contentType = "image/png") {
 }
 
 function serializeError(error) {
+  const classification = classifyRunFailure(error);
   return {
     name: error.name,
     code: error.code,
     message: error.message,
     stepId: error.stepId ?? null,
-    details: error.details ?? {}
+    details: {
+      ...(error.details ?? {}),
+      blockedState: classification.state,
+      recoveryHint: classification.recoveryHint,
+      recoverable: classification.recoverable
+    }
   };
 }

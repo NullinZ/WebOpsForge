@@ -24,6 +24,10 @@ export type WorkflowAction =
   | "fill"
   | "press"
   | "extract"
+  | "extractList"
+  | "extractDetail"
+  | "extractMedia"
+  | "paginate"
   | "apiCall"
   | "operation"
   | "screenshot"
@@ -79,6 +83,10 @@ export interface BrowserDriver {
   fill?(args: { selector: string; value: unknown; timeoutMs?: number | null; redact?: boolean; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
   press?(args: { selector?: string | null; key: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
   extract?(args: { selector: string; mode?: string; attribute?: string | null; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<{ value: unknown }>;
+  extractList?(args: { selector: string; fields: ExtractionFields; limit?: number | null; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<{ value: Record<string, unknown>[]; count?: number }>;
+  extractDetail?(args: { fields: ExtractionFields; timeoutMs?: number | null }): Promise<{ value: Record<string, unknown> }>;
+  extractMedia?(args: { selector: string; sources?: string[] | null; limit?: number | null; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<{ value: MediaExtractionRecord[]; count?: number }>;
+  paginate?(args: { nextSelector: string; maxPages?: number | null; waitForSelector?: string | null; timeoutMs?: number | null }): Promise<{ value?: unknown; pagesVisited?: number; urls?: string[] }>;
   apiCall?(args: ApiRequest): Promise<ApiResult>;
   screenshot?(args: { fullPage?: boolean; name?: string }): Promise<{ contentType?: string; bytes?: Uint8Array; text?: string } | null | undefined>;
   currentUrl?(): Promise<string>;
@@ -132,6 +140,49 @@ export interface ApiClient {
   call(request: ApiRequest): Promise<ApiResult>;
 }
 
+export type BlockedState =
+  | "approval_required"
+  | "browser_blocked"
+  | "captcha_or_verification"
+  | "empty_result"
+  | "login_required"
+  | "navigation_timeout"
+  | "permission_denied"
+  | "profile_busy"
+  | "rate_limited"
+  | "run_canceled"
+  | "selector_drift"
+  | "unknown_failure";
+
+export interface RunFailureClassification {
+  state: BlockedState;
+  reason: string;
+  recoverable: boolean;
+  runStatus: "blocked" | "failed" | "canceled";
+  profileStatus: "blocked" | "ready";
+  recoveryHint: string;
+}
+
+export type ExtractionFieldSpec = string | {
+  selector?: string | null;
+  mode?: "text" | "html" | "value" | "attribute" | string;
+  attribute?: string | null;
+  attr?: string | null;
+  type?: "string" | "number" | "url" | string;
+  required?: boolean;
+  default?: unknown;
+};
+
+export type ExtractionFields = Record<string, ExtractionFieldSpec>;
+
+export interface MediaExtractionRecord {
+  index?: number | null;
+  tagName?: string;
+  url: string;
+  attributes: Record<string, unknown>;
+  sources?: Array<Record<string, unknown>>;
+}
+
 export interface RunnerPolicy {
   beforeStep?(args: { step: NormalizedWorkflowStep; state: RunnerState }): Promise<void> | void;
   afterStep?(args: { step: NormalizedWorkflowStep; state: RunnerState; result: unknown }): Promise<void> | void;
@@ -173,6 +224,8 @@ export function createRateLimiter(options?: {
 }): RateLimiter;
 export function createFetchApiClient(options?: { fetchImpl?: typeof fetch }): ApiClient;
 export function executeApiCall(options: { step: NormalizedWorkflowStep; driver?: BrowserDriver; apiClient: ApiClient; timeoutMs?: number | null }): Promise<ApiResult>;
+export function classifyRunFailure(error: unknown): RunFailureClassification;
+export function detectBlockedState(error: unknown): BlockedState;
 
 export function createDryRunDriver(options?: {
   pages?: Record<string, { selectors?: Record<string, Record<string, unknown>> }>;
@@ -189,6 +242,35 @@ export function createPlaywrightDriver(options?: {
   viewport?: Record<string, number> | null;
   page?: unknown;
 }): Promise<BrowserDriver>;
+
+export interface WebOpsAdapter {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  registry: StudioRegistry;
+  workflows: StudioWorkflowRecord[];
+  fixtures: Record<string, {
+    pages?: Record<string, { selectors?: Record<string, Record<string, unknown>> }>;
+    apiResponses?: Record<string, unknown>;
+    initialUrl?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  policies: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+}
+
+export function defineAdapter(adapter: Partial<WebOpsAdapter> & { id: string }): WebOpsAdapter;
+export function createRegistryPack(pack?: Partial<StudioRegistry>): StudioRegistry;
+export function createFixtureDriverConfig(adapter: Partial<WebOpsAdapter> & { id: string }, fixtureId?: string): {
+  pages: Record<string, { selectors?: Record<string, Record<string, unknown>> }>;
+  apiResponses: Record<string, unknown>;
+  initialUrl: string;
+};
+export function installAdapterToStore(options: { adapter: Partial<WebOpsAdapter> & { id: string }; store: StudioStore }): Promise<{
+  adapter: { id: string; name: string; version: string };
+  imported: { sites: number; pages: number; actions: number; operations: number; workflows: number };
+}>;
 
 export interface StudioWorkflowRecord {
   id: string;

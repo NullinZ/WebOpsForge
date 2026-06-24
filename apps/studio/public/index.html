@@ -62,13 +62,55 @@
           <input id="workflowDescription" autocomplete="off" />
 
           <div class="tabs" role="tablist">
-            <button class="tab active" data-tab="graph" type="button" data-i18n="graph">Graph</button>
+            <button class="tab active" data-tab="builder" type="button" data-i18n="builder">Builder</button>
+            <button class="tab" data-tab="graph" type="button" data-i18n="graph">Graph</button>
             <button class="tab" data-tab="registry" type="button" data-i18n="registry">Registry</button>
             <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
             <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
           </div>
 
-          <div class="tab-panel active" id="graphPanel">
+          <div class="tab-panel active" id="builderPanel">
+            <div class="section-head compact">
+              <div>
+                <h2 data-i18n="operationBuilder">Operation Builder</h2>
+                <p class="section-note" data-i18n="operationBuilderNote">Create a readable page operation with list, detail, and media outputs.</p>
+              </div>
+              <div class="button-row">
+                <button class="primary" id="buildReadWorkflowButton" type="button" data-i18n="createReadWorkflow">Create Read Workflow</button>
+              </div>
+            </div>
+
+            <div class="builder-grid">
+              <div>
+                <label for="builderWorkflowName" data-i18n="name">Name</label>
+                <input id="builderWorkflowName" autocomplete="off" />
+              </div>
+              <div>
+                <label for="builderTargetUrl" data-i18n="targetUrl">Target URL</label>
+                <input id="builderTargetUrl" autocomplete="off" />
+              </div>
+              <div>
+                <label for="builderItemSelector" data-i18n="itemSelector">Item Selector</label>
+                <input id="builderItemSelector" autocomplete="off" />
+              </div>
+              <div>
+                <label for="builderMediaSelector" data-i18n="mediaSelector">Media Selector</label>
+                <input id="builderMediaSelector" autocomplete="off" />
+              </div>
+            </div>
+            <div class="builder-json-grid">
+              <div>
+                <label for="builderListFieldsJson" data-i18n="listFieldsJson">List Fields JSON</label>
+                <textarea id="builderListFieldsJson" spellcheck="false"></textarea>
+              </div>
+              <div>
+                <label for="builderDetailFieldsJson" data-i18n="detailFieldsJson">Detail Fields JSON</label>
+                <textarea id="builderDetailFieldsJson" spellcheck="false"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="graphPanel">
             <div class="section-head compact">
               <div>
                 <h2 data-i18n="workflowGraph">Workflow Graph</h2>
@@ -439,6 +481,7 @@
               <button class="secondary" id="retryRunButton" type="button" data-i18n="retry">Retry</button>
             </div>
             <div id="runActivity" class="run-activity muted"></div>
+            <div id="runOutputPreview" class="output-preview"></div>
             <pre id="runSummary" class="summary-box"></pre>
           </div>
 

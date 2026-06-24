@@ -41,6 +41,57 @@ export function createDryRunDriver({ pages = {}, apiResponses = {}, initialUrl =
       log.push({ action: "extract", selector, mode, attribute, value });
       return { selector, mode, attribute, value };
     },
+    async extractList({ selector, fields = {}, limit = null }) {
+      const node = findSelector({ pages, currentUrl, selector });
+      const items = Array.isArray(node.items) ? node.items : [];
+      const limited = limit == null ? items : items.slice(0, Number(limit));
+      const value = limited.map((item, index) => extractRecordFromFields({
+        node: item,
+        fields,
+        values,
+        currentUrl,
+        index
+      }));
+      log.push({ action: "extractList", selector, count: value.length });
+      return { selector, value, count: value.length };
+    },
+    async extractDetail({ fields = {} }) {
+      const page = pages[currentUrl] ?? pages["*"] ?? {};
+      const value = extractRecordFromFields({
+        node: page,
+        fields,
+        values,
+        currentUrl
+      });
+      log.push({ action: "extractDetail", fields: Object.keys(fields), count: Object.keys(value).length });
+      return { value };
+    },
+    async extractMedia({ selector, sources = null, limit = null }) {
+      const node = findSelector({ pages, currentUrl, selector });
+      const nodes = Array.isArray(node.items) ? node.items : [node];
+      const limited = limit == null ? nodes : nodes.slice(0, Number(limit));
+      const value = limited.map((item, index) => extractMediaRecord(item, {
+        currentUrl,
+        sources,
+        index
+      })).filter((item) => item.url || Object.keys(item.attributes).length > 0);
+      log.push({ action: "extractMedia", selector, count: value.length });
+      return { selector, value, count: value.length };
+    },
+    async paginate({ nextSelector, maxPages = 1 }) {
+      const visited = [];
+      for (let index = 0; index < Number(maxPages ?? 1); index += 1) {
+        const page = pages[currentUrl] ?? pages["*"];
+        if (!page?.selectors?.[nextSelector]) break;
+        const nextUrl = page.nextUrl ?? page.selectors[nextSelector]?.attributes?.href;
+        if (!nextUrl) break;
+        const resolved = resolveUrl(nextUrl, currentUrl);
+        visited.push(resolved);
+        currentUrl = resolved;
+      }
+      log.push({ action: "paginate", nextSelector, pages: visited.length });
+      return { nextSelector, pagesVisited: visited.length, urls: visited, value: visited };
+    },
     async screenshot({ name, fullPage = false }) {
       const text = `dry-run screenshot: ${name} ${currentUrl} fullPage=${fullPage}`;
       log.push({ action: "screenshot", name, fullPage });
@@ -93,10 +144,75 @@ function findSelector({ pages, currentUrl, selector }) {
   return node;
 }
 
+function extractRecordFromFields({ node, fields, values, currentUrl, index = null }) {
+  return Object.fromEntries(Object.entries(fields).map(([name, spec]) => {
+    const field = normalizeFieldSpec(spec);
+    const target = field.selector
+      ? node.selectors?.[field.selector] ?? node.fields?.[field.selector] ?? node[field.selector]
+      : node;
+    const value = target
+      ? extractValue(target, { mode: field.mode, attribute: field.attribute, values, selector: field.selector ?? name })
+      : field.default ?? null;
+    return [name, normalizeExtractedValue(value, field, { currentUrl, index })];
+  }));
+}
+
+function normalizeFieldSpec(spec) {
+  if (typeof spec === "string") return { selector: spec, mode: "text", attribute: null };
+  return {
+    selector: spec?.selector ?? null,
+    mode: spec?.mode ?? (spec?.attribute ? "attribute" : "text"),
+    attribute: spec?.attribute ?? spec?.attr ?? null,
+    type: spec?.type ?? "string",
+    default: spec?.default ?? null
+  };
+}
+
 function extractValue(node, { mode, attribute, values, selector }) {
   if (values.has(selector) && (mode === "value" || mode === "text")) return values.get(selector);
   if (mode === "attribute") return node.attributes?.[attribute] ?? "";
   if (mode === "html") return node.html ?? node.text ?? "";
   if (mode === "value") return node.value ?? "";
   return node.text ?? node.value ?? "";
+}
+
+function normalizeExtractedValue(value, field, { currentUrl }) {
+  if (value == null) return value;
+  if (field.type === "number") {
+    const number = Number(String(value).replace(/[^0-9.-]+/g, ""));
+    return Number.isFinite(number) ? number : null;
+  }
+  if (field.type === "url") return resolveUrl(value, currentUrl);
+  return value;
+}
+
+function extractMediaRecord(node, { currentUrl, sources = null, index = null }) {
+  const attributes = node.attributes ?? {};
+  const sourceNames = Array.isArray(sources) && sources.length > 0
+    ? sources
+    : ["src", "currentSrc", "href", "poster", "data-src", "srcset"];
+  const sourceEntries = Object.fromEntries(sourceNames
+    .map((name) => [name, attributes[name]])
+    .filter(([, value]) => value));
+  const firstSource = sourceEntries.currentSrc ?? sourceEntries.src ?? sourceEntries.href ?? sourceEntries.poster ?? sourceEntries["data-src"] ?? sourceEntries.srcset ?? "";
+  return {
+    index,
+    tagName: node.tagName ?? node.tag ?? "",
+    url: firstSource ? resolveUrl(firstSource, currentUrl) : "",
+    attributes: Object.fromEntries(Object.entries({
+      alt: attributes.alt,
+      title: attributes.title,
+      width: attributes.width,
+      height: attributes.height,
+      ...sourceEntries
+    }).filter(([, value]) => value != null && value !== ""))
+  };
+}
+
+function resolveUrl(value, baseUrl) {
+  try {
+    return new URL(String(value), baseUrl).toString();
+  } catch {
+    return String(value);
+  }
 }

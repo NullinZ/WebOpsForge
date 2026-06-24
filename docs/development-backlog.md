@@ -2,52 +2,54 @@
 
 This backlog tracks productization items that should not be left as code-only TODOs.
 
-## Open
+## Closed
 
 ### WOF-P0-001 Structured Data Extraction Layer
 
 - Priority: P0
-- Status: open
+- Status: closed
 - Area: runner, workflow schema, dry-run driver, Playwright driver, Studio output preview
 - Summary: Add first-class list/detail/media extraction capabilities so WebOps Forge can read repeated cards, table rows, details, images, and videos as structured outputs.
 - Acceptance: Workflows support `extractList`, `extractDetail`, `extractMedia`, pagination, normalized outputs, dry-run fixtures, and Studio previews for array/object/media results.
-- Evidence: See `docs/productization-gap-analysis-2026-06-24.md`.
+- Evidence: Implemented in runner/drivers/Studio output preview; `npm test` covers structured extraction and pagination.
 
 ### WOF-P0-002 Operation Builder Main Path
 
 - Priority: P0
-- Status: open
+- Status: closed for P0 baseline
 - Area: Studio UX
 - Summary: Add a guided authoring flow for choosing a site/profile, opening a target page, picking action or data regions, mapping fields, testing previews, saving operations, and running them.
 - Acceptance: A user can create a read-only search/list extraction operation without hand-editing workflow or driver JSON.
-- Evidence: See `docs/productization-gap-analysis-2026-06-24.md`.
+- Evidence: Studio Builder tab creates runnable read workflows with dry-run fixtures. Rich field-mapping UX remains under WOF-P1-008.
 
 ### WOF-P0-003 Evidence And Output Review
 
 - Priority: P0
-- Status: open
+- Status: closed for P0 baseline
 - Area: Studio runs, artifacts, evidence
 - Summary: Upgrade run review from raw events/artifact links to operator-grade output review with tables, detail previews, media gallery, screenshot timeline, and export.
 - Acceptance: Completed read workflows show structured outputs and media previews; failed runs show blocker, step, URL, and screenshot.
-- Evidence: See `docs/productization-gap-analysis-2026-06-24.md`.
+- Evidence: Runs panel now renders output tables, detail tables, and media cards while retaining raw JSON and evidence timeline.
 
 ### WOF-P0-004 Blocked-State Classification And Recovery
 
 - Priority: P0
-- Status: open
+- Status: closed
 - Area: runner, drivers, Studio runs
 - Summary: Classify blocked states such as login required, CAPTCHA, selector drift, empty result, unexpected modal, navigation timeout, rate limit, permission denied, and profile busy.
 - Acceptance: Runs expose named blocked states, recovery hints, and retry/resume paths where possible.
-- Evidence: See `docs/productization-gap-analysis-2026-06-24.md`.
+- Evidence: Added shared blocked-state classifier; runner evidence, queue run errors, and Studio activity summaries expose `blockedState`, `recoveryHint`, and `recoverable`.
 
 ### WOF-P0-005 Adapter SDK And Fixture Harness
 
 - Priority: P0
-- Status: open
+- Status: closed
 - Area: SDK, examples, tests
 - Summary: Define adapter conventions for private registry packs, fixture packs, operation defaults, and policy boundaries.
 - Acceptance: A private adapter can register sites/pages/operations and test list/detail/media workflows against controlled fixtures without copying Studio or runner code.
-- Evidence: See `docs/productization-gap-analysis-2026-06-24.md`.
+- Evidence: Added `defineAdapter`, `createRegistryPack`, `createFixtureDriverConfig`, and `installAdapterToStore` with tests.
+
+## Open
 
 ### WOF-P1-006 Commercial Open-Source Packaging
 
@@ -72,8 +74,8 @@ This backlog tracks productization items that should not be left as code-only TO
 - Priority: P1
 - Status: open
 - Area: Studio authoring
-- Summary: Add selector tests, schema-aware editor validation, workflow version diff, run comparison, reusable driver fixtures, and fixture capture/replay.
-- Acceptance: Users can compare workflow versions and run results, test selectors before running, and reuse fixtures for repeatable validation.
+- Summary: Add visual field-mapping controls, picker-to-field mapping, selector tests, schema-aware editor validation, workflow version diff, run comparison, reusable driver fixtures, and fixture capture/replay.
+- Acceptance: Users can map list/detail/media fields without editing JSON, compare workflow versions and run results, test selectors before running, and reuse fixtures for repeatable validation.
 - Evidence: See `docs/COMMERCIALIZATION_PLAN.md`.
 
 ### WOF-P1-009 Browser Worker Readiness

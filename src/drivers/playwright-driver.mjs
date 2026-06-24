@@ -77,6 +77,55 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       if (mode === "value") return { selector, mode, value: await locator.inputValue({ timeout: timeoutMs }) };
       return { selector, mode: "text", value: await locator.innerText({ timeout: timeoutMs }) };
     },
+    async extractList({ selector, fields = {}, limit = null, timeoutMs, targetIdentity = null }) {
+      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      await locator.first().waitFor({ state: "attached", timeout: timeoutMs });
+      const count = await locator.count();
+      const max = limit == null ? count : Math.min(count, Number(limit));
+      const value = [];
+      for (let index = 0; index < max; index += 1) {
+        value.push(await extractRecordFromLocator(locator.nth(index), fields, { timeoutMs, page }));
+      }
+      return { selector, value, count: value.length };
+    },
+    async extractDetail({ fields = {}, timeoutMs }) {
+      return {
+        value: await extractRecordFromLocator(page.locator(":root"), fields, { timeoutMs, page })
+      };
+    },
+    async extractMedia({ selector, sources = null, limit = null, timeoutMs, targetIdentity = null }) {
+      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      await locator.first().waitFor({ state: "attached", timeout: timeoutMs });
+      const count = await locator.count();
+      const max = limit == null ? count : Math.min(count, Number(limit));
+      const value = [];
+      for (let index = 0; index < max; index += 1) {
+        value.push(await locator.nth(index).evaluate(extractMediaElement, {
+          sources,
+          index
+        }));
+      }
+      return { selector, value, count: value.length };
+    },
+    async paginate({ nextSelector, maxPages = 1, waitForSelector = null, timeoutMs }) {
+      const urls = [];
+      for (let index = 0; index < Number(maxPages ?? 1); index += 1) {
+        const next = page.locator(nextSelector).first();
+        try {
+          await next.waitFor({ state: "visible", timeout: timeoutMs });
+        } catch {
+          break;
+        }
+        const before = page.url();
+        await next.click({ timeout: timeoutMs });
+        if (waitForSelector) await page.locator(waitForSelector).first().waitFor({ state: "attached", timeout: timeoutMs });
+        else await page.waitForLoadState("domcontentloaded", { timeout: timeoutMs }).catch(() => {});
+        const after = page.url();
+        urls.push(after);
+        if (after === before && urls.length > 1 && urls.at(-2) === after) break;
+      }
+      return { nextSelector, pagesVisited: urls.length, urls, value: urls };
+    },
     async screenshot({ fullPage = false }) {
       const bytes = await page.screenshot({ fullPage, type: "png" });
       return { contentType: "image/png", bytes };
@@ -108,6 +157,99 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
         await browser?.close();
       }
     }
+  };
+}
+
+async function extractRecordFromLocator(rootLocator, fields, { timeoutMs, page }) {
+  const entries = [];
+  for (const [name, rawSpec] of Object.entries(fields ?? {})) {
+    const spec = normalizeFieldSpec(rawSpec);
+    const target = spec.selector ? rootLocator.locator(spec.selector).first() : rootLocator;
+    let value = spec.default ?? null;
+    try {
+      await target.waitFor({ state: "attached", timeout: Math.min(Number(timeoutMs ?? 10_000), 5000) });
+      value = await extractLocatorValue(target, spec, timeoutMs);
+    } catch (error) {
+      if (spec.required) throw error;
+    }
+    entries.push([name, normalizeExtractedValue(value, spec, page.url())]);
+  }
+  return Object.fromEntries(entries);
+}
+
+function normalizeFieldSpec(spec) {
+  if (typeof spec === "string") return { selector: spec, mode: "text", attribute: null, type: "string" };
+  return {
+    selector: spec?.selector ?? null,
+    mode: spec?.mode ?? (spec?.attribute || spec?.attr ? "attribute" : "text"),
+    attribute: spec?.attribute ?? spec?.attr ?? null,
+    type: spec?.type ?? "string",
+    required: Boolean(spec?.required),
+    default: spec?.default ?? null
+  };
+}
+
+async function extractLocatorValue(locator, spec, timeoutMs) {
+  if (spec.mode === "attribute") return locator.getAttribute(spec.attribute, { timeout: timeoutMs });
+  if (spec.mode === "html") return locator.innerHTML({ timeout: timeoutMs });
+  if (spec.mode === "value") return locator.inputValue({ timeout: timeoutMs });
+  return locator.innerText({ timeout: timeoutMs });
+}
+
+function normalizeExtractedValue(value, spec, baseUrl) {
+  if (value == null) return value;
+  if (spec.type === "number") {
+    const number = Number(String(value).replace(/[^0-9.-]+/g, ""));
+    return Number.isFinite(number) ? number : null;
+  }
+  if (spec.type === "url") {
+    try {
+      return new URL(String(value), baseUrl).toString();
+    } catch {
+      return String(value);
+    }
+  }
+  return value;
+}
+
+function extractMediaElement(node, { sources = null, index = null } = {}) {
+  const sourceNames = Array.isArray(sources) && sources.length > 0
+    ? sources
+    : ["currentSrc", "src", "href", "poster", "data-src", "srcset"];
+  const attributes = {};
+  for (const attr of node.getAttributeNames()) {
+    const value = node.getAttribute(attr);
+    if (value != null) attributes[attr] = value;
+  }
+  const sourceEntries = {};
+  for (const name of sourceNames) {
+    const value = name === "currentSrc" ? node.currentSrc : node.getAttribute(name);
+    if (value) sourceEntries[name] = value;
+  }
+  const sourceChildren = Array.from(node.querySelectorAll?.("source") ?? []).map((source) => ({
+    src: source.src || source.getAttribute("src") || "",
+    type: source.getAttribute("type") || ""
+  })).filter((source) => source.src);
+  const firstSource = sourceEntries.currentSrc ?? sourceEntries.src ?? sourceEntries.href ?? sourceEntries.poster ?? sourceEntries["data-src"] ?? sourceChildren[0]?.src ?? sourceEntries.srcset ?? "";
+  const absolute = (value) => {
+    try {
+      return new URL(value, location.href).toString();
+    } catch {
+      return value;
+    }
+  };
+  return {
+    index,
+    tagName: node.nodeName.toLowerCase(),
+    url: firstSource ? absolute(firstSource) : "",
+    attributes: {
+      alt: attributes.alt,
+      title: attributes.title,
+      width: attributes.width,
+      height: attributes.height,
+      ...sourceEntries
+    },
+    sources: sourceChildren.map((source) => ({ ...source, src: absolute(source.src) }))
   };
 }
 

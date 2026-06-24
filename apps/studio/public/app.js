@@ -45,6 +45,19 @@ const GRAPH_CHILD_NODE_WIDTH = 210;
 const GRAPH_MIN_CONTENT_WIDTH = 780;
 const GRAPH_MIN_CONTENT_HEIGHT = 420;
 const GRAPH_CANVAS_MARGIN = 160;
+const BUILDER_DEFAULT_TARGET_URL = "https://example.local/catalog";
+const BUILDER_DEFAULT_ITEM_SELECTOR = ".product-card";
+const BUILDER_DEFAULT_MEDIA_SELECTOR = "img, video, source";
+const BUILDER_DEFAULT_LIST_FIELDS = {
+  title: { selector: ".title" },
+  detailUrl: { selector: "a", mode: "attribute", attribute: "href", type: "url" },
+  imageUrl: { selector: "img", mode: "attribute", attribute: "src", type: "url" }
+};
+const BUILDER_DEFAULT_DETAIL_FIELDS = {
+  title: { selector: "h1" },
+  description: { selector: ".description" }
+};
+const BUILDER_SAMPLE_IMAGE_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='640' viewBox='0 0 960 640'%3E%3Crect width='960' height='640' fill='%23eef2f6'/%3E%3Crect x='120' y='120' width='720' height='400' rx='24' fill='%23d7dee7'/%3E%3Ctext x='480' y='340' text-anchor='middle' font-family='Arial' font-size='42' fill='%23667789'%3EWebOps%20media%3C/text%3E%3C/svg%3E";
 const GRAPH_LAYOUT_CONFIGS = {
   sequence: {
     groupMinWidth: 520,
@@ -241,9 +254,11 @@ const I18N = {
     audit: "Audit",
     autoLayout: "Auto Layout",
     baseUrl: "Base URL",
+    builder: "Builder",
     buildWorkflow: "Build Workflow",
     cancel: "Cancel",
     checkSession: "Check Session",
+    createReadWorkflow: "Create Read Workflow",
     apply: "Apply",
     applyLatestPick: "Apply Latest",
     browserPicker: "Browser Picker",
@@ -254,6 +269,7 @@ const I18N = {
     definition: "Definition",
     definitionJson: "Definition JSON",
     description: "Description",
+    detailFieldsJson: "Detail Fields JSON",
     driver: "Driver",
     evidence: "Evidence",
     export: "Export",
@@ -265,6 +281,7 @@ const I18N = {
     importedBundle: "Imported {workflows} workflows, {profiles} profiles, and {registry} registry set",
     includes: "Includes",
     input: "Input",
+    itemSelector: "Item Selector",
     key: "Key",
     language: "Language",
     layoutCompact: "Compact",
@@ -274,6 +291,7 @@ const I18N = {
     legendFailed: "failed",
     legendIdle: "idle",
     legendRunning: "running",
+    listFieldsJson: "List Fields JSON",
     actionIds: "Action IDs",
     actionRegistry: "Action Registry",
     actionType: "Action Type",
@@ -281,6 +299,7 @@ const I18N = {
     addNode: "Add Node",
     loginState: "Login State",
     maxPerMinute: "Max Per Minute",
+    mediaSelector: "Media Selector",
     method: "Method",
     mode: "Mode",
     name: "Name",
@@ -295,6 +314,7 @@ const I18N = {
     newWorkflow: "New Workflow",
     noArtifacts: "No artifacts",
     noAuditRecords: "No audit records",
+    noOutputs: "No outputs",
     noPicks: "No browser picks",
     noRegistryRecords: "No resources registered",
     noWorkflowSelected: "No workflow selected",
@@ -302,9 +322,12 @@ const I18N = {
     noProfile: "no profile",
     none: "none",
     operationModes: "Operation Modes",
+    operationBuilder: "Operation Builder",
+    operationBuilderNote: "Create a readable page operation with list, detail, and media outputs.",
     operationRegistry: "Operation Registry",
     operations: "Operations",
     outputName: "Output Name",
+    outputs: "Outputs",
     page: "Page",
     pageRegistry: "Page Registry",
     pages: "Pages",
@@ -334,6 +357,7 @@ const I18N = {
     retry: "Retry",
     retryQueued: "Retry queued",
     runActivityCompleted: "Completed {step}",
+    runActivityBlocked: "Blocked at {step}: {state}. {hint}",
     runActivityFailed: "Failed {step}: {error}",
     runActivityQueued: "Queued on {profile}",
     runActivityRunning: "Running {step}",
@@ -358,6 +382,7 @@ const I18N = {
     status: "Status",
     stepCount: "{count} steps",
     tags: "Tags",
+    targetUrl: "Target URL",
     urlPattern: "URL Pattern",
     validate: "Validate",
     valueTemplate: "Value Template",
@@ -365,6 +390,7 @@ const I18N = {
     workflowBuilt: "Workflow built from operation",
     workflowGraph: "Workflow Graph",
     workflowGraphNote: "Drag nodes to arrange the execution map.",
+    readWorkflowCreated: "Read workflow created",
     workflowSaved: "Workflow saved",
     workflowValid: "Workflow valid: {count} steps",
     workflows: "Workflows",
@@ -383,9 +409,11 @@ const I18N = {
     audit: "审计",
     autoLayout: "自动布局",
     baseUrl: "基础地址",
+    builder: "Builder",
     buildWorkflow: "生成工作流",
     cancel: "取消",
     checkSession: "检查会话",
+    createReadWorkflow: "创建读取工作流",
     apply: "应用",
     applyLatestPick: "应用最新",
     browserPicker: "浏览器拾取",
@@ -396,6 +424,7 @@ const I18N = {
     definition: "定义",
     definitionJson: "定义 JSON",
     description: "描述",
+    detailFieldsJson: "详情字段 JSON",
     driver: "驱动配置",
     evidence: "证据",
     export: "导出",
@@ -407,6 +436,7 @@ const I18N = {
     importedBundle: "已导入 {workflows} 个工作流、{profiles} 个 Profile 和 {registry} 套注册表",
     includes: "包含文本",
     input: "输入",
+    itemSelector: "列表项选择器",
     key: "按键",
     language: "语言",
     layoutCompact: "紧凑",
@@ -416,6 +446,7 @@ const I18N = {
     legendFailed: "失败",
     legendIdle: "空闲",
     legendRunning: "运行中",
+    listFieldsJson: "列表字段 JSON",
     actionIds: "动作 ID",
     actionRegistry: "页面动作注册",
     actionType: "动作类型",
@@ -423,6 +454,7 @@ const I18N = {
     addNode: "新增节点",
     loginState: "登录态",
     maxPerMinute: "每分钟上限",
+    mediaSelector: "媒体选择器",
     method: "请求方法",
     mode: "模式",
     name: "名称",
@@ -437,6 +469,7 @@ const I18N = {
     newWorkflow: "新建工作流",
     noArtifacts: "暂无产物",
     noAuditRecords: "暂无审计记录",
+    noOutputs: "暂无输出",
     noPicks: "暂无浏览器拾取",
     noRegistryRecords: "暂无注册资源",
     noWorkflowSelected: "未选择工作流",
@@ -444,9 +477,12 @@ const I18N = {
     noProfile: "不使用 Profile",
     none: "无",
     operationModes: "动作执行方式",
+    operationBuilder: "操作生成器",
+    operationBuilderNote: "创建可读取列表、详情和图片视频输出的页面操作。",
     operationRegistry: "业务操作注册",
     operations: "业务操作",
     outputName: "输出名",
+    outputs: "输出",
     page: "页面",
     pageRegistry: "页面注册",
     pages: "页面",
@@ -476,6 +512,7 @@ const I18N = {
     retry: "重试",
     retryQueued: "重试已入队",
     runActivityCompleted: "已完成 {step}",
+    runActivityBlocked: "{step} 已阻塞：{state}。{hint}",
     runActivityFailed: "{step} 失败：{error}",
     runActivityQueued: "已排队，Profile：{profile}",
     runActivityRunning: "正在执行 {step}",
@@ -500,6 +537,7 @@ const I18N = {
     status: "状态",
     stepCount: "{count} 步",
     tags: "标签",
+    targetUrl: "目标 URL",
     urlPattern: "URL 模式",
     validate: "校验",
     valueTemplate: "值模板",
@@ -507,6 +545,7 @@ const I18N = {
     workflowBuilt: "已从业务操作生成工作流",
     workflowGraph: "工作流图谱",
     workflowGraphNote: "拖动节点来整理执行流程。",
+    readWorkflowCreated: "读取工作流已创建",
     workflowSaved: "工作流已保存",
     workflowValid: "工作流有效：{count} 步",
     workflows: "工作流",
@@ -559,6 +598,35 @@ const STATUS_LABELS = {
   }
 };
 
+const BLOCKED_STATE_LABELS = {
+  en: {
+    approval_required: "approval required",
+    browser_blocked: "browser blocked",
+    captcha_or_verification: "captcha or verification",
+    empty_result: "empty result",
+    login_required: "login required",
+    navigation_timeout: "navigation timeout",
+    permission_denied: "permission denied",
+    profile_busy: "profile busy",
+    rate_limited: "rate limited",
+    selector_drift: "selector drift",
+    unknown_failure: "unknown failure"
+  },
+  zh: {
+    approval_required: "需要审批",
+    browser_blocked: "浏览器阻塞",
+    captcha_or_verification: "验证码或验证",
+    empty_result: "结果为空",
+    login_required: "需要登录",
+    navigation_timeout: "导航超时",
+    permission_denied: "权限不足",
+    profile_busy: "Profile 占用",
+    rate_limited: "限流",
+    selector_drift: "选择器漂移",
+    unknown_failure: "未知失败"
+  }
+};
+
 const ACTION_LABELS = {
   en: {
     apiCall: "API call",
@@ -568,9 +636,13 @@ const ACTION_LABELS = {
     checkpoint: "Checkpoint",
     click: "Click",
     extract: "Extract",
+    extractDetail: "Extract detail",
+    extractList: "Extract list",
+    extractMedia: "Extract media",
     fill: "Fill",
     goto: "Open URL",
     operation: "Operation",
+    paginate: "Paginate",
     press: "Press key",
     screenshot: "Screenshot",
     waitFor: "Wait for element"
@@ -583,9 +655,13 @@ const ACTION_LABELS = {
     checkpoint: "检查点",
     click: "点击",
     extract: "提取",
+    extractDetail: "提取详情",
+    extractList: "提取列表",
+    extractMedia: "提取媒体",
     fill: "输入",
     goto: "打开网址",
     operation: "业务操作",
+    paginate: "翻页",
     press: "按键",
     screenshot: "截图",
     waitFor: "等待元素"
@@ -600,6 +676,10 @@ const ACTION_PICKER_VALUES = {
     "fill",
     "press",
     "extract",
+    "extractList",
+    "extractDetail",
+    "extractMedia",
+    "paginate",
     "apiCall",
     "operation",
     "screenshot",
@@ -615,6 +695,10 @@ const ACTION_PICKER_VALUES = {
     "fill",
     "press",
     "extract",
+    "extractList",
+    "extractDetail",
+    "extractMedia",
+    "paginate",
     "screenshot",
     "apiCall",
     "approval"
@@ -858,6 +942,12 @@ const elements = {
   registryItemActionIds: document.querySelector("#registryItemActionIds"),
   registryItemDefinitionJson: document.querySelector("#registryItemDefinitionJson"),
   registryItemSchemaJson: document.querySelector("#registryItemSchemaJson"),
+  builderWorkflowName: document.querySelector("#builderWorkflowName"),
+  builderTargetUrl: document.querySelector("#builderTargetUrl"),
+  builderItemSelector: document.querySelector("#builderItemSelector"),
+  builderMediaSelector: document.querySelector("#builderMediaSelector"),
+  builderListFieldsJson: document.querySelector("#builderListFieldsJson"),
+  builderDetailFieldsJson: document.querySelector("#builderDetailFieldsJson"),
   workflowList: document.querySelector("#workflowList"),
   profileList: document.querySelector("#profileList"),
   runList: document.querySelector("#runList"),
@@ -912,6 +1002,7 @@ const elements = {
   profileRate: document.querySelector("#profileRate"),
   selectedRunStatus: document.querySelector("#selectedRunStatus"),
   runActivity: document.querySelector("#runActivity"),
+  runOutputPreview: document.querySelector("#runOutputPreview"),
   runSummary: document.querySelector("#runSummary"),
   eventTimeline: document.querySelector("#eventTimeline"),
   artifactList: document.querySelector("#artifactList"),
@@ -923,8 +1014,10 @@ const elements = {
 setupResizableLayouts();
 setupActionPickers();
 setupFieldHelps();
+seedBuilderDefaults();
 
 elements.languageToggle.addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
+document.querySelector("#buildReadWorkflowButton").addEventListener("click", () => createReadWorkflowFromBuilder());
 document.querySelector("#autoLayoutButton").addEventListener("click", () => autoLayoutSelectedWorkflow());
 document.querySelector("#saveGraphWorkflowButton").addEventListener("click", () => saveSelectedWorkflow());
 document.querySelector("#refreshButton").addEventListener("click", () => refreshAll());
@@ -2858,6 +2951,216 @@ function graphStorageKey(workflowId) {
   return `webops-forge-graph:${GRAPH_LAYOUT_VERSION}:${state.graphLayout}:${workflowId}`;
 }
 
+function seedBuilderDefaults() {
+  if (!elements.builderWorkflowName) return;
+  if (!elements.builderWorkflowName.value) elements.builderWorkflowName.value = "Read catalog page";
+  if (!elements.builderTargetUrl.value) elements.builderTargetUrl.value = BUILDER_DEFAULT_TARGET_URL;
+  if (!elements.builderItemSelector.value) elements.builderItemSelector.value = BUILDER_DEFAULT_ITEM_SELECTOR;
+  if (!elements.builderMediaSelector.value) elements.builderMediaSelector.value = BUILDER_DEFAULT_MEDIA_SELECTOR;
+  if (!elements.builderListFieldsJson.value) elements.builderListFieldsJson.value = formatJson(BUILDER_DEFAULT_LIST_FIELDS);
+  if (!elements.builderDetailFieldsJson.value) elements.builderDetailFieldsJson.value = formatJson(BUILDER_DEFAULT_DETAIL_FIELDS);
+}
+
+async function createReadWorkflowFromBuilder() {
+  try {
+    const targetUrl = elements.builderTargetUrl.value.trim() || BUILDER_DEFAULT_TARGET_URL;
+    const url = new URL(targetUrl);
+    const workflowName = elements.builderWorkflowName.value.trim() || `Read ${url.hostname}`;
+    const itemSelector = elements.builderItemSelector.value.trim();
+    const mediaSelector = elements.builderMediaSelector.value.trim();
+    const listFields = parseJson(elements.builderListFieldsJson.value, t("listFieldsJson"));
+    const detailFields = parseJson(elements.builderDetailFieldsJson.value, t("detailFieldsJson"));
+    const workflowRecord = createReadWorkflowRecord({
+      workflowName,
+      targetUrl: url.toString(),
+      itemSelector,
+      mediaSelector,
+      listFields,
+      detailFields
+    });
+    const data = await api("/api/workflows", { method: "POST", body: workflowRecord });
+    await loadWorkflows();
+    selectWorkflow(data.workflow.id);
+    selectTab("run");
+    render();
+    showToast(t("readWorkflowCreated"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function createReadWorkflowRecord({ workflowName, targetUrl, itemSelector, mediaSelector, listFields, detailFields }) {
+  const id = `read-${slugify(workflowName)}-${Date.now().toString(36)}`;
+  const steps = [
+    { id: "open", action: "goto", url: targetUrl }
+  ];
+
+  if (itemSelector) {
+    steps.push({ id: "wait-list", action: "waitFor", selector: itemSelector });
+    steps.push({
+      id: "read-list",
+      action: "extractList",
+      selector: itemSelector,
+      fields: listFields,
+      limit: 20,
+      name: "list"
+    });
+  }
+
+  if (Object.keys(detailFields).length > 0) {
+    steps.push({
+      id: "read-detail",
+      action: "extractDetail",
+      fields: detailFields,
+      name: "detail"
+    });
+  }
+
+  if (mediaSelector) {
+    steps.push({
+      id: "read-media",
+      action: "extractMedia",
+      selector: mediaSelector,
+      limit: 20,
+      name: "media"
+    });
+  }
+
+  steps.push({ id: "capture", action: "screenshot", name: "read-page", fullPage: true });
+
+  return {
+    id,
+    name: workflowName,
+    description: `Read list, detail, and media from ${targetUrl}`,
+    workflow: {
+      name: slugify(workflowName),
+      version: "0.1.0",
+      defaults: { timeoutMs: 10000, screenshot: "on-failure" },
+      steps
+    },
+    defaultRun: {
+      mode: "dry-run",
+      profileId: "dry-run-demo",
+      input: {},
+      context: {},
+      driverConfig: createBuilderDriverConfig({ targetUrl, itemSelector, mediaSelector, listFields, detailFields })
+    },
+    graph: { layout: "sequence", positions: {} }
+  };
+}
+
+function createBuilderDriverConfig({ targetUrl, itemSelector, mediaSelector, listFields, detailFields }) {
+  const selectors = {};
+  if (itemSelector) {
+    selectors[itemSelector] = {
+      items: [0, 1, 2].map((_, index) => createFixtureRecordNode(listFields, {
+        currentUrl: targetUrl,
+        index,
+        prefix: "List item"
+      }))
+    };
+  }
+  if (mediaSelector) {
+    selectors[mediaSelector] = {
+      items: [
+        {
+          tagName: "img",
+          attributes: {
+            src: BUILDER_SAMPLE_IMAGE_URL,
+            alt: "Sample image",
+            width: "960",
+            height: "640"
+          }
+        },
+        {
+          tagName: "video",
+          attributes: {
+            src: "/media/sample-video.mp4",
+            poster: BUILDER_SAMPLE_IMAGE_URL,
+            title: "Sample video"
+          }
+        }
+      ]
+    };
+  }
+
+  const detailNode = createFixtureRecordNode(detailFields, {
+    currentUrl: targetUrl,
+    index: 0,
+    prefix: "Detail"
+  });
+  Object.assign(selectors, detailNode.selectors);
+
+  return {
+    pages: {
+      [targetUrl]: { selectors }
+    }
+  };
+}
+
+function createFixtureRecordNode(fields, { currentUrl, index, prefix }) {
+  const node = { text: `${prefix} ${index + 1}`, selectors: {} };
+  for (const [name, rawSpec] of Object.entries(fields ?? {})) {
+    const field = normalizeBuilderFieldSpec(rawSpec);
+    if (!field.selector) {
+      node.text = fixtureValueForField(name, field, { currentUrl, index, prefix });
+      continue;
+    }
+    node.selectors[field.selector] = mergeFixtureFieldNode(
+      node.selectors[field.selector],
+      fixtureValueForField(name, field, { currentUrl, index, prefix }),
+      field
+    );
+  }
+  return node;
+}
+
+function mergeFixtureFieldNode(existing, value, field) {
+  const node = existing ?? { text: "", value: "", attributes: {} };
+  if (field.mode === "attribute" && field.attribute) {
+    node.attributes[field.attribute] = value;
+    return node;
+  }
+  if (field.mode === "value") {
+    node.value = value;
+    return node;
+  }
+  if (field.mode === "html") {
+    node.html = `<span>${escapeHtml(value)}</span>`;
+    node.text = value;
+    return node;
+  }
+  node.text = value;
+  return node;
+}
+
+function fixtureValueForField(name, field, { currentUrl, index, prefix }) {
+  const label = toReadableLabel(name);
+  if (field.attribute === "src" || field.attribute === "poster" || String(name).toLowerCase().includes("image")) {
+    return BUILDER_SAMPLE_IMAGE_URL;
+  }
+  if (field.type === "number") return String((index + 1) * 10);
+  if (field.type === "url" || field.attribute === "href") return new URL(`/detail/${index + 1}`, currentUrl).toString();
+  return `${prefix} ${index + 1} ${label}`;
+}
+
+function normalizeBuilderFieldSpec(spec) {
+  if (typeof spec === "string") return { selector: spec, mode: "text", attribute: null, type: "string" };
+  return {
+    selector: spec?.selector ?? null,
+    mode: spec?.mode ?? (spec?.attribute ? "attribute" : "text"),
+    attribute: spec?.attribute ?? spec?.attr ?? null,
+    type: spec?.type ?? "string"
+  };
+}
+
+function toReadableLabel(value) {
+  return String(value ?? "")
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase();
+}
+
 function selectWorkflow(id) {
   const workflow = state.workflows.find((item) => item.id === id);
   if (!workflow) return;
@@ -2918,6 +3221,7 @@ function renderRunDetail({ run, events, artifacts }) {
     <strong>${escapeHtml(activity.title)}</strong>
     <span>${escapeHtml(activity.detail)}</span>
   `;
+  renderOutputPreview(run.outputs ?? {});
   elements.runSummary.textContent = formatJson({
     id: run.id,
     status: run.status,
@@ -2959,6 +3263,97 @@ function renderRunDetail({ run, events, artifacts }) {
   }
 }
 
+function renderOutputPreview(outputs = {}) {
+  const entries = Object.entries(outputs ?? {});
+  if (entries.length === 0) {
+    elements.runOutputPreview.innerHTML = `<div class="event-meta">${escapeHtml(t("noOutputs"))}</div>`;
+    return;
+  }
+
+  elements.runOutputPreview.innerHTML = `
+    <div class="output-preview-head">
+      <strong>${escapeHtml(t("outputs"))}</strong>
+      <span>${escapeHtml(String(entries.length))}</span>
+    </div>
+    ${entries.map(([name, value]) => renderOutputEntry(name, value)).join("")}
+  `;
+}
+
+function renderOutputEntry(name, value) {
+  return `
+    <section class="output-entry">
+      <div class="output-entry-title">${escapeHtml(name)}</div>
+      ${renderOutputValue(value)}
+    </section>
+  `;
+}
+
+function renderOutputValue(value) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return `<div class="event-meta">${escapeHtml(t("noOutputs"))}</div>`;
+    if (isMediaOutput(value)) return renderMediaOutput(value);
+    if (value.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
+      return renderOutputTable(value);
+    }
+    return `<pre class="mini-json">${escapeHtml(formatJson(value.slice(0, 12)))}</pre>`;
+  }
+  if (value && typeof value === "object") return renderOutputTable([value]);
+  return `<div class="output-scalar">${escapeHtml(String(value ?? ""))}</div>`;
+}
+
+function renderOutputTable(rows) {
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row ?? {})))).slice(0, 6);
+  if (columns.length === 0) return `<div class="event-meta">${escapeHtml(t("noOutputs"))}</div>`;
+  return `
+    <div class="output-table-wrap">
+      <table class="output-table">
+        <thead>
+          <tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr>
+        </thead>
+        <tbody>
+          ${rows.slice(0, 12).map((row) => `
+            <tr>
+              ${columns.map((column) => `<td>${escapeHtml(formatOutputCell(row?.[column]))}</td>`).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderMediaOutput(items) {
+  return `
+    <div class="media-grid">
+      ${items.slice(0, 12).map((item) => {
+        const url = item?.url ?? item?.src ?? item?.href ?? "";
+        const title = item?.attributes?.alt ?? item?.attributes?.title ?? item?.tagName ?? url;
+        return `
+          <a class="media-card" href="${escapeAttribute(url)}" target="_blank" rel="noreferrer">
+            ${isImageUrl(url) ? `<img src="${escapeAttribute(url)}" alt="${escapeAttribute(title)}" loading="lazy" />` : `<span class="media-file">${escapeHtml(item?.tagName || "media")}</span>`}
+            <span>${escapeHtml(title || url)}</span>
+          </a>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function isMediaOutput(items) {
+  return items.some((item) => item && typeof item === "object" && (item.url || item.src || item.href || item.tagName || item.attributes?.src));
+}
+
+function isImageUrl(value) {
+  const url = String(value ?? "");
+  return /^data:image\//i.test(url) || /\.(apng|avif|gif|jpe?g|png|svg|webp)(\?|#|$)/i.test(url);
+}
+
+function formatOutputCell(value) {
+  if (value == null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 function summarizeRunActivity(run, events = []) {
   const latestStepEvent = [...events].reverse().find((event) => event.stepId);
   const profile = run.profileName || run.profileId || t("noProfile");
@@ -2975,6 +3370,18 @@ function summarizeRunActivity(run, events = []) {
 
   const step = findWorkflowStep(run.workflowId, latestStepEvent.stepId);
   const stepText = describeStep(latestStepEvent, step);
+  const failure = latestStepEvent.error ?? run.error ?? {};
+  const blockedState = failure.details?.blockedState ?? run.error?.details?.blockedState;
+  if (run.status === "blocked" || blockedState) {
+    return {
+      title: statusLabel(run.status === "blocked" ? "blocked" : "failed"),
+      detail: t("runActivityBlocked", {
+        step: stepText,
+        state: blockedStateLabel(blockedState),
+        hint: failure.details?.recoveryHint ?? run.error?.details?.recoveryHint ?? ""
+      })
+    };
+  }
   if (run.status === "failed" || latestStepEvent.type === "step.failed") {
     return {
       title: statusLabel("failed"),
@@ -3003,6 +3410,8 @@ function eventDetail(event, run = null) {
   const target = stepTarget(step);
   if (target) parts.push(target);
   if (event.error?.message) parts.push(cleanErrorMessage(event.error.message));
+  if (event.error?.details?.blockedState) parts.push(blockedStateLabel(event.error.details.blockedState));
+  if (event.error?.details?.recoveryHint) parts.push(event.error.details.recoveryHint);
   if (event.result?.url) parts.push(event.result.url);
   if (event.workflow?.name) parts.push(event.workflow.name);
   return parts.join(" · ");
@@ -3822,6 +4231,13 @@ function statusLabel(value) {
   return STATUS_LABELS[state.language]?.[value] ?? STATUS_LABELS.en[value] ?? String(value ?? "");
 }
 
+function blockedStateLabel(value) {
+  const code = String(value ?? "unknown_failure");
+  return BLOCKED_STATE_LABELS[state.language]?.[code]
+    ?? BLOCKED_STATE_LABELS.en[code]
+    ?? code.replace(/_/g, " ");
+}
+
 function actionLabel(value) {
   const { primary, secondary } = actionLabelParts(value);
   return [primary, secondary].filter(Boolean).join(" ");
@@ -3984,4 +4400,8 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value);
 }

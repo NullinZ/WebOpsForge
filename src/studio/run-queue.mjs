@@ -3,6 +3,7 @@ import { WebOpsRunner } from "../runner.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
 import { createDryRunDriver } from "../drivers/dry-run-driver.mjs";
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
+import { classifyRunFailure } from "../blocked-state.mjs";
 
 const DEFAULT_HUMAN_TIMING = {
   minDelayMs: 800,
@@ -110,11 +111,12 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
       await store.releaseProfile(run.profileId, runId, "ready");
     } catch (error) {
       const completedAt = clock();
+      const classification = classifyRunFailure(error);
       await driver?.close?.().catch(() => {});
-      await store.releaseProfile(run.profileId, runId, error.code === "BROWSER_BLOCKED" ? "blocked" : "ready");
+      await store.releaseProfile(run.profileId, runId, classification.profileStatus);
       await store.updateRun(runId, {
-        status: error.code === "RUN_CANCELLED" ? "canceled" : error.code === "BROWSER_BLOCKED" ? "blocked" : "failed",
-        error: serializeError(error),
+        status: classification.runStatus,
+        error: serializeError(error, classification),
         completedAt: completedAt.toISOString(),
         durationMs: completedAt.getTime() - startedAt.getTime()
       });
@@ -190,12 +192,17 @@ function numberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function serializeError(error) {
+function serializeError(error, classification = classifyRunFailure(error)) {
   return {
     name: error.name ?? "Error",
     code: error.code ?? "ERROR",
     message: error.message ?? String(error),
     stepId: error.stepId ?? null,
-    details: error.details ?? {}
+    details: {
+      ...(error.details ?? {}),
+      blockedState: classification.state,
+      recoveryHint: classification.recoveryHint,
+      recoverable: classification.recoverable
+    }
   };
 }

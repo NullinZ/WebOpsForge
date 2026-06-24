@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { StudioStore, createRunQueue, probeProfileSession } from "../src/index.mjs";
+import { StudioStore, createRunQueue, defineWorkflow, probeProfileSession } from "../src/index.mjs";
 
 test("studio store seeds workflow and queue completes a dry-run", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-studio-"));
@@ -192,6 +192,53 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     assert.ok(audit.some((item) => item.type === "picker.event_received"));
     assert.ok(audit.some((item) => item.type === "picker.session_started"));
     assert.ok(audit.some((item) => item.type === "picker.session_cleared"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run queue records blocked-state classification for stalled browser work", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-studio-"));
+  try {
+    const store = new StudioStore({ dir });
+    await store.init();
+    const workflow = await store.saveWorkflow({
+      id: "blocked-fixture",
+      name: "Blocked fixture",
+      workflow: defineWorkflow({
+        name: "blocked-fixture",
+        steps: [
+          { id: "open", action: "goto", url: "https://example.local/search" },
+          { id: "assert", action: "assertText", selector: ".result-title", includes: "approved-value" }
+        ]
+      }),
+      defaultRun: {
+        mode: "dry-run",
+        input: {},
+        context: {},
+        driverConfig: {
+          pages: {
+            "https://example.local/search": {
+              selectors: {
+                ".result-title": { text: "unexpected" }
+              }
+            }
+          }
+        }
+      }
+    });
+    const run = await store.createRun({
+      workflowId: workflow.id,
+      mode: "dry-run",
+      driverConfig: workflow.defaultRun.driverConfig
+    });
+    const queue = createRunQueue({ store });
+    queue.enqueue(run.id);
+    const blocked = await waitForRun(store, run.id);
+
+    assert.equal(blocked.status, "blocked");
+    assert.equal(blocked.error.details.blockedState, "selector_drift");
+    assert.match(blocked.error.details.recoveryHint, /selector/i);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
