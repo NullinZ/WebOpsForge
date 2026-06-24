@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WebOps Forge Studio</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <script>window.__WEBOPS_BASE_PATH__ = "%WEBOPS_BASE_PATH%";</script>
+    <link rel="stylesheet" href="%WEBOPS_BASE_PATH%/styles.css" />
   </head>
   <body>
     <div class="shell">
@@ -504,6 +505,6 @@
     </div>
 
     <div id="toast" class="toast" role="status"></div>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="%WEBOPS_BASE_PATH%/app.js"></script>
   </body>
 </html>

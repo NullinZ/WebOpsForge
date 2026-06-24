@@ -10,22 +10,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT ?? 4177);
 const host = process.env.HOST ?? "127.0.0.1";
+const basePaths = parseBasePaths(process.env.BASE_PATHS ?? process.env.BASE_PATH ?? "");
 const store = new StudioStore();
 await store.init();
 const queue = createRunQueue({ store, concurrency: Number(process.env.WEBOPS_FORGE_CONCURRENCY ?? 1) });
 
 const server = http.createServer(async (req, res) => {
   try {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
-    if (req.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+    const incomingUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
+    const route = matchBasePath(incomingUrl.pathname);
+    const url = new URL(incomingUrl.toString());
+    url.pathname = route.pathname;
+    if (req.method === "OPTIONS" && route.pathname.startsWith("/api/")) {
       sendJson(res, 204, {});
       return;
     }
-    if (url.pathname.startsWith("/api/")) {
+    if (route.pathname.startsWith("/api/")) {
       await handleApi(req, res, url);
       return;
     }
-    await serveStatic(res, url.pathname);
+    await serveStatic(res, route.pathname, route.basePath);
   } catch (error) {
     sendJson(res, statusFromError(error), {
       error: {
@@ -38,7 +42,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`WebOps Studio running at http://${host}:${port}`);
+  const baseInfo = basePaths.length ? ` with base paths ${basePaths.join(", ")}` : "";
+  console.log(`WebOps Studio running at http://${host}:${port}${baseInfo}`);
 });
 
 async function handleApi(req, res, url) {
@@ -390,25 +395,34 @@ async function readJsonBody(req) {
   return JSON.parse(raw);
 }
 
-async function serveStatic(res, pathname) {
+async function serveStatic(res, pathname, basePath = "") {
   const requestPath = pathname === "/" ? "/index.html" : pathname;
   const filePath = safeJoin(publicDir, requestPath);
   try {
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error("Not a file");
+    if (path.basename(filePath) === "index.html") {
+      await serveIndex(res, basePath);
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": contentType(filePath),
       "Cache-Control": "no-store"
     });
     createReadStream(filePath).pipe(res);
   } catch {
-    const indexPath = path.join(publicDir, "index.html");
-    res.writeHead(200, {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store"
-    });
-    createReadStream(indexPath).pipe(res);
+    await serveIndex(res, basePath);
   }
+}
+
+async function serveIndex(res, basePath = "") {
+  const indexPath = path.join(publicDir, "index.html");
+  const html = (await readFile(indexPath, "utf8")).replaceAll("%WEBOPS_BASE_PATH%", basePath);
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
+  res.end(html);
 }
 
 async function serveArtifact(res, runId, artifactName) {
@@ -453,6 +467,37 @@ function safeJoin(root, requestPath) {
   const filePath = path.join(root, normalized);
   if (!filePath.startsWith(root)) return path.join(root, "index.html");
   return filePath;
+}
+
+function parseBasePaths(value) {
+  return Array.from(new Set(
+    String(value ?? "")
+      .split(",")
+      .map(normalizeBasePath)
+      .filter(Boolean)
+  )).sort((left, right) => right.length - left.length);
+}
+
+function normalizeBasePath(value) {
+  const text = String(value ?? "").trim();
+  if (!text || text === "/") return "";
+  const normalized = `/${text.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+  if (!/^\/[A-Za-z0-9._~/-]+$/.test(normalized)) {
+    throw new Error(`Invalid studio base path: ${text}`);
+  }
+  return normalized;
+}
+
+function matchBasePath(pathname) {
+  for (const basePath of basePaths) {
+    if (pathname === basePath || pathname.startsWith(`${basePath}/`)) {
+      return {
+        basePath,
+        pathname: pathname.slice(basePath.length) || "/"
+      };
+    }
+  }
+  return { basePath: "", pathname };
 }
 
 function contentType(filePath) {

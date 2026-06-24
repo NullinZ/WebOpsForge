@@ -34,6 +34,7 @@ const state = {
   polling: null
 };
 
+const APP_BASE_PATH = normalizeAppBasePath(window.__WEBOPS_BASE_PATH__);
 const GRAPH_CANVAS_SCALE = 10;
 const GRAPH_LAYOUT_VERSION = "v3";
 const GRAPH_MIN_ZOOM = 0.2;
@@ -4171,7 +4172,7 @@ function startPolling() {
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(appUrl(url), {
     method: options.method ?? "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined
@@ -4179,6 +4180,19 @@ async function api(url, options = {}) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message ?? `Request failed: ${response.status}`);
   return data;
+}
+
+function normalizeAppBasePath(value) {
+  const text = String(value ?? "").trim();
+  if (!text || text === "/") return "";
+  const normalized = `/${text.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+  return /^\/[A-Za-z0-9._~/-]+$/.test(normalized) ? normalized : "";
+}
+
+function appUrl(path) {
+  const text = String(path ?? "");
+  if (/^(https?:)?\/\//i.test(text) || text.startsWith("data:")) return text;
+  return `${APP_BASE_PATH}${text.startsWith("/") ? text : `/${text}`}`;
 }
 
 function setLanguage(language) {
