@@ -4,6 +4,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StudioStore, createRunQueue } from "../../src/index.mjs";
+import { createWorkflowDebugSlice } from "../../src/studio/debug-workflow.mjs";
+import { discoverLocalBrowserProfiles } from "../../src/studio/local-browser-profiles.mjs";
 import { probeProfileSession } from "../../src/studio/profile-session.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -222,13 +224,19 @@ async function handleWorkflows(req, res, parts) {
     const workflow = await requireWorkflow(id);
     const body = await readJsonBody(req);
     const defaults = workflow.defaultRun ?? {};
+    const debug = normalizeRunDebug(body.debug);
+    const workflowOverride = debug
+      ? createWorkflowDebugSlice(body.workflow ?? workflow.workflow, debug.targetStepId)
+      : null;
     const run = await store.createRun({
       workflowId: id,
       mode: body.mode ?? defaults.mode ?? "dry-run",
       input: body.input ?? defaults.input ?? {},
       context: body.context ?? defaults.context ?? {},
       driverConfig: body.driverConfig ?? defaults.driverConfig ?? {},
-      profileId: body.profileId ?? defaults.profileId ?? null
+      profileId: body.profileId ?? defaults.profileId ?? null,
+      workflowOverride,
+      debug
     });
     queue.enqueue(run.id);
     sendJson(res, 202, { run });
@@ -240,6 +248,15 @@ async function handleWorkflows(req, res, parts) {
 
 async function handleProfiles(req, res, parts) {
   const id = parts[1] ? decodeURIComponent(parts[1]) : null;
+
+  if (req.method === "GET" && id === "discovered") {
+    sendJson(res, 200, {
+      profiles: await discoverLocalBrowserProfiles({
+        existingProfiles: await store.listProfiles()
+      })
+    });
+    return;
+  }
 
   if (req.method === "GET" && !id) {
     sendJson(res, 200, { profiles: await store.listProfiles() });
@@ -517,5 +534,15 @@ function summarizeRegistry(registry) {
     pages: registry.pages?.length ?? 0,
     actions: registry.actions?.length ?? 0,
     operations: registry.operations?.length ?? 0
+  };
+}
+
+function normalizeRunDebug(value) {
+  if (!value || typeof value !== "object") return null;
+  const targetStepId = String(value.targetStepId ?? "").trim();
+  if (!targetStepId) return null;
+  return {
+    mode: value.mode === "single-node" ? "single-node" : "run-to-node",
+    targetStepId
   };
 }

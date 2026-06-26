@@ -1,9 +1,13 @@
+import { readlink } from "node:fs/promises";
+import path from "node:path";
 import { BrowserActionError } from "../errors.mjs";
 import { normalizeApiResult } from "../api-client.mjs";
 
 export async function createPlaywrightDriver({
   browserType = "chromium",
   profileDir = null,
+  profileDirectory = null,
+  browserChannel = null,
   headless = false,
   launchOptions = {},
   contextOptions = {},
@@ -17,12 +21,37 @@ export async function createPlaywrightDriver({
   if (!type) throw new BrowserActionError(`Unsupported Playwright browser type: ${browserType}`);
 
   if (profileDir) {
-    const context = await type.launchPersistentContext(profileDir, {
-      headless,
-      viewport,
-      ...launchOptions,
-      ...contextOptions
+    const persistentLaunchOptions = normalizePersistentLaunchOptions({
+      launchOptions,
+      browserChannel,
+      profileDirectory
     });
+    const launchProfileDirectory = profileDirectory ?? profileDirectoryFromArgs(persistentLaunchOptions.args);
+    const launchBrowserChannel = browserChannel ?? persistentLaunchOptions.channel;
+    const activeLock = await detectActiveProfileLock(profileDir);
+    if (activeLock) {
+      throw persistentProfileBusyError({
+        profileDir,
+        profileDirectory: launchProfileDirectory,
+        browserChannel: launchBrowserChannel,
+        activeLock
+      });
+    }
+    let context;
+    try {
+      context = await type.launchPersistentContext(profileDir, {
+        headless,
+        viewport,
+        ...persistentLaunchOptions,
+        ...contextOptions
+      });
+    } catch (error) {
+      throw normalizePersistentProfileLaunchError(error, {
+        profileDir,
+        profileDirectory: launchProfileDirectory,
+        browserChannel: launchBrowserChannel
+      });
+    }
     const existing = context.pages()[0];
     const activePage = existing ?? await context.newPage();
     return createDriverFromPage({ page: activePage, context, ownsBrowser: true });
@@ -32,6 +61,84 @@ export async function createPlaywrightDriver({
   const context = await browser.newContext({ viewport, ...contextOptions });
   const activePage = await context.newPage();
   return createDriverFromPage({ page: activePage, context, browser, ownsBrowser: true });
+}
+
+function normalizePersistentLaunchOptions({ launchOptions = {}, browserChannel = null, profileDirectory = null }) {
+  const next = { ...launchOptions };
+  if (browserChannel) next.channel = browserChannel;
+  if (profileDirectory) {
+    const args = Array.isArray(next.args) ? [...next.args] : [];
+    const existingIndex = args.findIndex((arg) => String(arg).startsWith("--profile-directory="));
+    if (existingIndex !== -1) args.splice(existingIndex, 1);
+    args.unshift(`--profile-directory=${profileDirectory}`);
+    next.args = args;
+  }
+  return next;
+}
+
+function normalizePersistentProfileLaunchError(error, { profileDir, profileDirectory, browserChannel }) {
+  const message = String(error?.message ?? error);
+  if (!isExistingBrowserSessionError(message)) return error;
+  return persistentProfileBusyError({
+    profileDir,
+    profileDirectory,
+    browserChannel,
+    originalMessage: message,
+    cause: error
+  });
+}
+
+function persistentProfileBusyError({
+  profileDir,
+  profileDirectory,
+  browserChannel,
+  originalMessage = null,
+  activeLock = null,
+  cause = null
+}) {
+  const label = [browserChannel || "Chromium", profileDirectory].filter(Boolean).join(" ");
+  return new BrowserActionError(
+    `${label || "Browser profile"} is already open in the normal browser. Quit Chrome completely before rerunning this profile, or use a clean Local Chromium profile. WebOps Forge cannot attach to a Chrome session that was started without remote debugging.`,
+    {
+      code: "PROFILE_BUSY",
+      cause,
+      details: {
+        reason: "profile_busy",
+        profileDir,
+        profileDirectory,
+        browserChannel,
+        lockPid: activeLock?.pid ?? null,
+        lockTarget: activeLock?.target ?? null,
+        originalMessage
+      }
+    }
+  );
+}
+
+function isExistingBrowserSessionError(message) {
+  return /正在现有的浏览器会话中打开|opening in existing browser session|processsingleton|user data directory is already in use/i.test(message);
+}
+
+function profileDirectoryFromArgs(args) {
+  if (!Array.isArray(args)) return null;
+  const arg = args.find((item) => String(item).startsWith("--profile-directory="));
+  return arg ? String(arg).slice("--profile-directory=".length) : null;
+}
+
+async function detectActiveProfileLock(profileDir) {
+  try {
+    const target = await readlink(path.join(profileDir, "SingletonLock"));
+    const pid = Number(String(target).match(/-(\d+)$/)?.[1]);
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    try {
+      process.kill(pid, 0);
+      return { pid, target };
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
 }
 
 function createDriverFromPage({ page, context = null, browser = null, ownsBrowser = false }) {

@@ -160,7 +160,9 @@ export class StudioStore {
       accountLabel: record.accountLabel ?? existing?.accountLabel ?? "",
       loginState: record.loginState ?? existing?.loginState ?? "unchecked",
       profileDir: record.profileDir ?? existing?.profileDir ?? "",
+      profileDirectory: record.profileDirectory ?? existing?.profileDirectory ?? "",
       browserType: record.browserType ?? existing?.browserType ?? "chromium",
+      browserChannel: record.browserChannel ?? existing?.browserChannel ?? "",
       headless: Boolean(record.headless ?? existing?.headless ?? false),
       status,
       leasedRunId: status === "busy" ? record.leasedRunId ?? existing?.leasedRunId ?? null : record.leasedRunId ?? null,
@@ -304,7 +306,7 @@ export class StudioStore {
     return (await this.#readJson(this.runsFile, [])).find((run) => run.id === id) ?? null;
   }
 
-  async createRun({ workflowId, mode = "dry-run", input = {}, context = {}, driverConfig = {}, profileId = null, sourceRunId = null }) {
+  async createRun({ workflowId, mode = "dry-run", input = {}, context = {}, driverConfig = {}, profileId = null, sourceRunId = null, workflowOverride = null, debug = null }) {
     const workflow = await this.getWorkflow(workflowId);
     if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
     const profile = profileId ? await this.getProfile(profileId) : null;
@@ -321,6 +323,8 @@ export class StudioStore {
       input,
       context,
       driverConfig,
+      workflowOverride,
+      debug,
       outputs: {},
       error: null,
       sourceRunId,
@@ -857,7 +861,9 @@ function createDefaultProfiles(clock = () => new Date()) {
       accountLabel: "demo-operator",
       loginState: "authenticated",
       profileDir: "",
+      profileDirectory: "",
       browserType: "chromium",
+      browserChannel: "",
       headless: true,
       status: "ready",
       leasedRunId: null,
@@ -884,7 +890,9 @@ function createDefaultProfiles(clock = () => new Date()) {
       accountLabel: "",
       loginState: "unchecked",
       profileDir: "",
+      profileDirectory: "",
       browserType: "chromium",
+      browserChannel: "",
       headless: false,
       status: "ready",
       leasedRunId: null,

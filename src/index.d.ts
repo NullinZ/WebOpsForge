@@ -236,6 +236,8 @@ export function createDryRunDriver(options?: {
 export function createPlaywrightDriver(options?: {
   browserType?: "chromium" | "firefox" | "webkit" | string;
   profileDir?: string | null;
+  profileDirectory?: string | null;
+  browserChannel?: string | null;
   headless?: boolean;
   launchOptions?: Record<string, unknown>;
   contextOptions?: Record<string, unknown>;
@@ -309,6 +311,8 @@ export interface StudioRunRecord {
   input: Record<string, unknown>;
   context: Record<string, unknown>;
   driverConfig: Record<string, unknown>;
+  workflowOverride?: Workflow | NormalizedWorkflow | null;
+  debug?: { mode?: string; targetStepId?: string } | null;
   outputs: Record<string, unknown>;
   error: Record<string, unknown> | null;
   sourceRunId: string | null;
@@ -397,7 +401,9 @@ export interface StudioProfileRecord {
   accountLabel: string;
   loginState: "unchecked" | "authenticated" | "logged-out" | "unknown" | string;
   profileDir: string;
+  profileDirectory?: string;
   browserType: string;
+  browserChannel?: string;
   headless: boolean;
   status: "ready" | "busy" | "blocked" | "disabled" | string;
   leasedRunId: string | null;
@@ -503,7 +509,7 @@ export class StudioStore {
   savePickerSession(session: Partial<PickerSession> & { allowedUrls?: string[]; targetUrl?: string }): Promise<PickerSession>;
   clearPickerSession(options?: { sessionId?: string | null; reason?: string }): Promise<{ cleared: boolean; session: PickerSession | null }>;
   getRun(id: string): Promise<StudioRunRecord | null>;
-  createRun(options: { workflowId: string; mode?: string; input?: Record<string, unknown>; context?: Record<string, unknown>; driverConfig?: Record<string, unknown>; profileId?: string | null; sourceRunId?: string | null }): Promise<StudioRunRecord>;
+  createRun(options: { workflowId: string; mode?: string; input?: Record<string, unknown>; context?: Record<string, unknown>; driverConfig?: Record<string, unknown>; profileId?: string | null; sourceRunId?: string | null; workflowOverride?: Workflow | NormalizedWorkflow | null; debug?: { mode?: string; targetStepId?: string } | null }): Promise<StudioRunRecord>;
   updateRun(id: string, patch: Partial<StudioRunRecord>): Promise<StudioRunRecord>;
   cancelRun(id: string, reason?: string): Promise<{ run: StudioRunRecord; changed: boolean }>;
   retryRun(id: string): Promise<StudioRunRecord>;

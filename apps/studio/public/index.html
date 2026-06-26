@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -18,7 +18,7 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="language-control language-toggle" id="languageToggle" type="button" aria-label="Language">
+          <button class="language-control language-toggle" id="languageToggle" type="button" aria-label="语言">
             <span class="lang-option" data-lang-code="en">EN</span>
             <span class="lang-divider">/</span>
             <span class="lang-option" data-lang-code="zh">中文</span>
@@ -49,25 +49,29 @@
         </aside>
 
         <section class="editor-pane">
-          <div class="split-head">
-            <div>
-              <label for="workflowName" data-i18n="name">Name</label>
-              <input id="workflowName" autocomplete="off" />
+          <div class="workflow-editor-head">
+            <div class="workflow-meta-grid">
+              <div>
+                <label for="workflowName" data-i18n="name">Name</label>
+                <input id="workflowName" autocomplete="off" />
+              </div>
+              <div>
+                <label for="workflowDescription" data-i18n="description">Description</label>
+                <input id="workflowDescription" autocomplete="off" />
+              </div>
+              <div>
+                <label for="workflowId" data-i18n="id">ID</label>
+                <input id="workflowId" autocomplete="off" />
+              </div>
             </div>
-            <div>
-              <label for="workflowId" data-i18n="id">ID</label>
-              <input id="workflowId" autocomplete="off" />
-            </div>
-          </div>
-          <label for="workflowDescription" data-i18n="description">Description</label>
-          <input id="workflowDescription" autocomplete="off" />
 
-          <div class="tabs" role="tablist">
-            <button class="tab active" data-tab="builder" type="button" data-i18n="builder">Builder</button>
-            <button class="tab" data-tab="graph" type="button" data-i18n="graph">Graph</button>
-            <button class="tab" data-tab="registry" type="button" data-i18n="registry">Registry</button>
-            <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
-            <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
+            <div class="tabs" role="tablist">
+              <button class="tab active" data-tab="builder" type="button" data-i18n="builder">Builder</button>
+              <button class="tab" data-tab="graph" type="button" data-i18n="graph">Graph</button>
+              <button class="tab" data-tab="registry" type="button" data-i18n="registry">Registry</button>
+              <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
+              <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
+            </div>
           </div>
 
           <div class="tab-panel active" id="builderPanel">
@@ -402,6 +406,16 @@
                   <button class="secondary" id="saveProfileButton" type="button" data-i18n="saveProfile">Save Profile</button>
                 </div>
               </div>
+              <div class="local-profile-picker">
+                <div>
+                  <label for="localProfileSelect" data-i18n="localBrowserProfile">Local Browser Profile</label>
+                  <select id="localProfileSelect"></select>
+                </div>
+                <div class="button-row">
+                  <button class="secondary" id="refreshLocalProfilesButton" type="button" data-i18n="refreshLocalProfiles">Refresh Local</button>
+                  <button class="secondary" id="applyLocalProfileButton" type="button" data-i18n="applyLocalProfile">Import Profile</button>
+                </div>
+              </div>
               <div class="profile-grid">
                 <div>
                   <label for="profileId" data-i18n="id">ID</label>
@@ -447,6 +461,14 @@
                 <div>
                   <label for="profileDir" data-i18n="profileDir">Profile Dir</label>
                   <input id="profileDir" />
+                </div>
+                <div>
+                  <label for="profileDirectory" data-i18n="profileDirectory">Chrome Profile</label>
+                  <input id="profileDirectory" />
+                </div>
+                <div>
+                  <label for="profileBrowserChannel" data-i18n="browserChannel">Browser Channel</label>
+                  <input id="profileBrowserChannel" />
                 </div>
                 <div>
                   <label for="profileCheckUrl" data-i18n="sessionCheckUrl">Session Check URL</label>

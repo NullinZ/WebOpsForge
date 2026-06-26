@@ -94,7 +94,7 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
       driver = await createDriver(run, leasedProfile);
       const rateLimiter = createRunRateLimiter(run, leasedProfile);
       const runner = new WebOpsRunner({ driver, evidenceStore, rateLimiter, clock });
-      const result = await runner.run(workflowRecord.workflow, {
+      const result = await runner.run(run.workflowOverride ?? workflowRecord.workflow, {
         input: run.input,
         context: run.context,
         runId,
@@ -135,14 +135,56 @@ async function createDriver(run, profile = null) {
 function mergeDriverConfig(driverConfig, profile) {
   if (!profile) return driverConfig;
   if (profile.mode === "playwright") {
+    const profileLaunchOptions = {};
+    if (profile.browserChannel) profileLaunchOptions.channel = profile.browserChannel;
+    if (profile.profileDirectory) {
+      profileLaunchOptions.args = [`--profile-directory=${profile.profileDirectory}`];
+      profileLaunchOptions.ignoreDefaultArgs = mergeIgnoreDefaultArgs(
+        profileLaunchOptions.ignoreDefaultArgs,
+        ["--disable-extensions"]
+      );
+    }
     return {
       browserType: profile.browserType ?? "chromium",
       profileDir: profile.profileDir || driverConfig.profileDir || null,
       headless: Boolean(profile.headless),
-      ...driverConfig
+      ...driverConfig,
+      launchOptions: mergeLaunchOptions(profileLaunchOptions, driverConfig.launchOptions)
     };
   }
   return driverConfig;
+}
+
+function mergeLaunchOptions(profileOptions = {}, runOptions = {}) {
+  const merged = { ...profileOptions, ...runOptions };
+  const args = [
+    ...(Array.isArray(profileOptions.args) ? profileOptions.args : []),
+    ...(Array.isArray(runOptions.args) ? runOptions.args : [])
+  ];
+  merged.args = dedupeProfileDirectoryArgs(args);
+  merged.ignoreDefaultArgs = mergeIgnoreDefaultArgs(profileOptions.ignoreDefaultArgs, runOptions.ignoreDefaultArgs);
+  return merged;
+}
+
+function mergeIgnoreDefaultArgs(profileValue, runValue) {
+  if (profileValue === true || runValue === true) return true;
+  const values = [
+    ...(Array.isArray(profileValue) ? profileValue : []),
+    ...(Array.isArray(runValue) ? runValue : [])
+  ].map(String).filter(Boolean);
+  return values.length ? Array.from(new Set(values)) : undefined;
+}
+
+function dedupeProfileDirectoryArgs(args) {
+  const result = [];
+  for (const arg of args) {
+    if (String(arg).startsWith("--profile-directory=")) {
+      const existingIndex = result.findIndex((item) => String(item).startsWith("--profile-directory="));
+      if (existingIndex !== -1) result.splice(existingIndex, 1);
+    }
+    result.push(arg);
+  }
+  return result;
 }
 
 function createRunRateLimiter(run, profile = null) {

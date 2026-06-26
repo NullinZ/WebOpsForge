@@ -623,6 +623,55 @@ h2 {
   grid-template-columns: minmax(0, 1fr) minmax(160px, 260px);
 }
 
+.workflow-editor-head {
+  display: grid;
+  gap: 8px;
+  margin: -4px 0 10px;
+}
+
+.workflow-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(160px, 2fr) minmax(150px, 260px);
+  gap: 10px;
+  align-items: end;
+}
+
+.workflow-editor-head .field-label-line {
+  margin: 0 0 4px;
+}
+
+.workflow-editor-head .field-label-main > label,
+.workflow-editor-head label {
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.workflow-editor-head .field-help-button {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  font-size: 10px;
+}
+
+.workflow-editor-head input {
+  height: 30px;
+  padding-inline: 10px;
+}
+
+.workflow-editor-head .tabs {
+  min-width: 0;
+  margin-top: 0;
+  overflow-x: auto;
+  border-bottom-color: #c9d3df;
+}
+
+.workflow-editor-head .tab {
+  min-height: 30px;
+  padding-inline: 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .run-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
@@ -973,6 +1022,43 @@ h2 {
   color: var(--accent);
 }
 
+.node-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.node-run-button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid #fca5a5;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.22);
+  cursor: pointer;
+}
+
+.node-run-button:hover {
+  border-color: #fecaca;
+  background: linear-gradient(180deg, #f05252 0%, #b91c1c 100%);
+  box-shadow: 0 8px 18px rgba(185, 28, 28, 0.28);
+  transform: translateY(-1px);
+}
+
+.node-run-button:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(185, 28, 28, 0.22);
+}
+
 .node-action .action-label {
   gap: 1px;
 }
@@ -1152,6 +1238,14 @@ h2 {
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+}
+
+.local-profile-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
 }
 
 .profile-grid {
@@ -1696,8 +1790,10 @@ h2 {
   }
 
   .workspace,
+  .workflow-meta-grid,
   .split-head,
   .run-grid,
+  .local-profile-picker,
   .profile-grid,
   .builder-grid,
   .builder-json-grid,

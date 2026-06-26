@@ -3,7 +3,7 @@ const RECOVERY_HINTS = {
   captcha_or_verification: "Complete the verification in the browser profile, then retry the run.",
   login_required: "Refresh the profile session and confirm the account is logged in.",
   permission_denied: "Check account permissions or the service credential used by the run.",
-  profile_busy: "Wait for the profile lease to clear or choose another profile.",
+  profile_busy: "Close any running Chrome session using this profile, wait for the profile lease to clear, or choose another profile.",
   rate_limited: "Reduce run frequency or wait for the platform limit to reset.",
   selector_drift: "Refresh the selector with browser picking or update the adapter.",
   navigation_timeout: "Check page reachability, network state, and timeout settings.",

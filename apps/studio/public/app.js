@@ -1,6 +1,10 @@
+const LANGUAGE_STORAGE_KEY = "webops-forge-language";
+const LANGUAGE_CHOICE_STORAGE_KEY = "webops-forge-language-choice";
+
 const state = {
   workflows: [],
   profiles: [],
+  localBrowserProfiles: [],
   runs: [],
   audit: [],
   pickerEvents: [],
@@ -16,7 +20,7 @@ const state = {
   selectedRegistryDraft: null,
   registryFormKey: null,
   runtime: null,
-  language: localStorage.getItem("webops-forge-language") || "en",
+  language: getInitialLanguage(),
   graphPositions: {},
   graphDrag: null,
   graphPan: null,
@@ -256,12 +260,15 @@ const I18N = {
     autoLayout: "Auto Layout",
     baseUrl: "Base URL",
     builder: "Builder",
+    browserChannel: "Browser Channel",
     buildWorkflow: "Build Workflow",
+    browserStartup: "Browser startup",
     cancel: "Cancel",
     checkSession: "Check Session",
     createReadWorkflow: "Create Read Workflow",
     apply: "Apply",
     applyLatestPick: "Apply Latest",
+    applyLocalProfile: "Import Profile",
     browserPicker: "Browser Picker",
     confidence: "Confidence",
     context: "Context",
@@ -304,6 +311,10 @@ const I18N = {
     method: "Method",
     mode: "Mode",
     name: "Name",
+    localBrowserProfile: "Local Browser Profile",
+    localBrowserProfiles: "Local Browser Profiles (select to import)",
+    localProfileImported: "Local browser profile imported",
+    noLocalProfiles: "No local browser profiles found",
     new: "New",
     nodeEditor: "Node Editor",
     nodeEditorApi: "API branch",
@@ -342,11 +353,13 @@ const I18N = {
     platform: "Platform",
     profile: "Profile",
     profileDetails: "Profile Details",
-    profileDir: "Profile Dir",
+    profileDir: "User Data Dir",
+    profileDirectory: "Chrome Profile",
     profileIdRequired: "Profile ID is required",
     profileSaved: "Profile saved",
     profiles: "Profiles",
     refresh: "Refresh",
+    refreshLocalProfiles: "Refresh Local",
     refreshPicks: "Refresh Picks",
     registry: "Registry",
     registryCenter: "Registry Center",
@@ -357,6 +370,8 @@ const I18N = {
     resourceSaved: "Resource saved",
     retry: "Retry",
     retryQueued: "Retry queued",
+    runToNode: "Run to node",
+    debugRunQueued: "Debug run queued to {step}",
     runActivityCompleted: "Completed {step}",
     runActivityBlocked: "Blocked at {step}: {state}. {hint}",
     runActivityFailed: "Failed {step}: {error}",
@@ -370,6 +385,7 @@ const I18N = {
     runs: "Runs",
     save: "Save",
     saveProfile: "Save Profile",
+    savedProfiles: "Saved Profiles",
     saveResource: "Save Resource",
     schemaJson: "Schema JSON",
     selectedRun: "Selected Run",
@@ -411,12 +427,15 @@ const I18N = {
     autoLayout: "自动布局",
     baseUrl: "基础地址",
     builder: "Builder",
+    browserChannel: "浏览器通道",
     buildWorkflow: "生成工作流",
+    browserStartup: "浏览器启动",
     cancel: "取消",
     checkSession: "检查会话",
     createReadWorkflow: "创建读取工作流",
     apply: "应用",
     applyLatestPick: "应用最新",
+    applyLocalProfile: "导入 Profile",
     browserPicker: "浏览器拾取",
     confidence: "置信度",
     context: "上下文",
@@ -459,6 +478,10 @@ const I18N = {
     method: "请求方法",
     mode: "模式",
     name: "名称",
+    localBrowserProfile: "本机浏览器 Profile",
+    localBrowserProfiles: "本机浏览器 Profile（选择即导入）",
+    localProfileImported: "已导入本机浏览器 Profile",
+    noLocalProfiles: "未找到本机浏览器 Profile",
     new: "新建",
     nodeEditor: "节点编辑",
     nodeEditorApi: "API 分支",
@@ -497,11 +520,13 @@ const I18N = {
     platform: "平台",
     profile: "Profile",
     profileDetails: "Profile 详情",
-    profileDir: "Profile 目录",
+    profileDir: "用户数据目录",
+    profileDirectory: "Chrome 子 Profile",
     profileIdRequired: "必须填写 Profile ID",
     profileSaved: "Profile 已保存",
     profiles: "Profiles",
     refresh: "刷新",
+    refreshLocalProfiles: "刷新本机",
     refreshPicks: "刷新拾取",
     registry: "注册中心",
     registryCenter: "注册中心",
@@ -512,6 +537,8 @@ const I18N = {
     resourceSaved: "资源已保存",
     retry: "重试",
     retryQueued: "重试已入队",
+    runToNode: "执行到此节点",
+    debugRunQueued: "已创建调试运行，到节点：{step}",
     runActivityCompleted: "已完成 {step}",
     runActivityBlocked: "{step} 已阻塞：{state}。{hint}",
     runActivityFailed: "{step} 失败：{error}",
@@ -525,6 +552,7 @@ const I18N = {
     runs: "运行记录",
     save: "保存",
     saveProfile: "保存 Profile",
+    savedProfiles: "已保存 Profile",
     saveResource: "保存资源",
     schemaJson: "结构 JSON",
     selectedRun: "当前运行",
@@ -625,6 +653,15 @@ const BLOCKED_STATE_LABELS = {
     rate_limited: "限流",
     selector_drift: "选择器漂移",
     unknown_failure: "未知失败"
+  }
+};
+
+const RECOVERY_HINT_LABELS = {
+  en: {
+    profile_busy: "Close the normal Chrome window using this profile, then rerun, or choose another profile."
+  },
+  zh: {
+    profile_busy: "请先完全退出正在占用这个 Profile 的 Chrome，重新运行；或改用 Local Chromium / 其他 Profile。"
   }
 };
 
@@ -839,6 +876,10 @@ const FIELD_HELP = {
     zh: { title: "Profile", body: "选择运行使用的浏览器身份、登录态或 dry-run profile。来源于左侧 Profiles。" },
     en: { title: "Profile", body: "Browser identity, login state, or dry-run profile used for execution. Sourced from Profiles." }
   },
+  localProfileSelect: {
+    zh: { title: "本机浏览器 Profile", body: "从这台电脑已有的 Chrome/Chromium Profile 里导入一个运行身份。" },
+    en: { title: "Local browser profile", body: "Imports a run identity from an existing Chrome or Chromium profile on this computer." }
+  },
   approvalToggle: {
     zh: { title: "审批闸口", body: "运行前如何处理 approval 节点。可使用上下文、全部通过或阻断示例审批。" },
     en: { title: "Approval gates", body: "How approval steps are handled before a run: use context, approve all, or block sample gates." }
@@ -888,8 +929,16 @@ const FIELD_HELP = {
     en: { title: "Profile status", body: "Controls whether the profile can be used for queued runs. busy means it is currently leased." }
   },
   profileDir: {
-    zh: { title: "Profile 目录", body: "真实浏览器用户数据目录。用于复用登录态，必须是本机安全路径。" },
-    en: { title: "Profile directory", body: "Real browser user-data directory. Used to reuse login state and should be a safe local path." }
+    zh: { title: "用户数据目录", body: "浏览器 user-data 根目录。系统 Chrome Profile 通常共用这个根目录。" },
+    en: { title: "User data directory", body: "Browser user-data root. System Chrome profiles usually share this root directory." }
+  },
+  profileDirectory: {
+    zh: { title: "Chrome 子 Profile", body: "Chrome 根目录下的子 Profile，例如 Default、Profile 1 或 Profile 2。" },
+    en: { title: "Chrome profile directory", body: "Profile subdirectory inside the Chrome root, such as Default, Profile 1, or Profile 2." }
+  },
+  profileBrowserChannel: {
+    zh: { title: "浏览器通道", body: "运行时使用的浏览器通道，例如 chrome、msedge。留空则使用 Playwright 默认 Chromium。" },
+    en: { title: "Browser channel", body: "Browser channel used at runtime, such as chrome or msedge. Empty uses Playwright's default Chromium." }
   },
   profileCheckUrl: {
     zh: { title: "会话检查 URL", body: "检查登录态时打开的页面。通常是平台首页或后台页。" },
@@ -998,6 +1047,9 @@ const elements = {
   profileLoginState: document.querySelector("#profileLoginState"),
   profileStatus: document.querySelector("#profileStatus"),
   profileDir: document.querySelector("#profileDir"),
+  profileDirectory: document.querySelector("#profileDirectory"),
+  profileBrowserChannel: document.querySelector("#profileBrowserChannel"),
+  localProfileSelect: document.querySelector("#localProfileSelect"),
   profileCheckUrl: document.querySelector("#profileCheckUrl"),
   profileAccountSelector: document.querySelector("#profileAccountSelector"),
   profileRate: document.querySelector("#profileRate"),
@@ -1069,6 +1121,9 @@ document.addEventListener("click", (event) => {
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
+elements.profileSelect.addEventListener("change", () => handleProfileSelectChange());
+document.querySelector("#refreshLocalProfilesButton").addEventListener("click", () => refreshLocalBrowserProfiles());
+document.querySelector("#applyLocalProfileButton").addEventListener("click", () => applySelectedLocalProfile());
 document.querySelector("#newRegistryItemButton").addEventListener("click", () => createBlankRegistryItem());
 document.querySelector("#saveRegistryItemButton").addEventListener("click", () => saveSelectedRegistryItem());
 document.querySelector("#deleteRegistryItemButton").addEventListener("click", () => deleteSelectedRegistryItem());
@@ -1127,7 +1182,7 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
+  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadLocalBrowserProfiles(), loadRuns(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   if (!state.selectedRegistryId) selectDefaultRegistryItem();
@@ -1152,6 +1207,11 @@ async function loadRegistry() {
 async function loadProfiles() {
   const data = await api("/api/profiles");
   state.profiles = data.profiles;
+}
+
+async function loadLocalBrowserProfiles() {
+  const data = await api("/api/profiles/discovered");
+  state.localBrowserProfiles = data.profiles;
 }
 
 async function loadRuns() {
@@ -1182,6 +1242,7 @@ function render() {
   renderRegistry();
   renderWorkflows();
   renderProfiles();
+  renderLocalBrowserProfiles();
   renderRuns();
   renderGraph();
   renderAudit();
@@ -1217,12 +1278,19 @@ function renderWorkflows() {
 
 function renderProfiles() {
   elements.profileList.innerHTML = "";
-  elements.profileSelect.innerHTML = `<option value="">${escapeHtml(t("noProfile"))}</option>`;
+  elements.profileSelect.innerHTML = "";
+  const noProfileOption = document.createElement("option");
+  noProfileOption.value = "";
+  noProfileOption.textContent = t("noProfile");
+  elements.profileSelect.append(noProfileOption);
+
+  const savedGroup = document.createElement("optgroup");
+  savedGroup.label = t("savedProfiles");
   for (const profile of state.profiles) {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = `${profile.name}${profile.accountLabel ? ` / ${profile.accountLabel}` : ""} (${profile.mode})`;
-    elements.profileSelect.append(option);
+    option.textContent = `${profile.name}${profile.accountLabel ? ` / ${profile.accountLabel}` : ""} (${profileKindLabel(profile)})`;
+    savedGroup.append(option);
 
     const button = document.createElement("button");
     button.type = "button";
@@ -1230,16 +1298,48 @@ function renderProfiles() {
     const identity = profile.accountLabel || profile.platform || profile.mode;
     button.innerHTML = `
       <span class="row-title">${escapeHtml(profile.name)}</span>
-      <span class="row-meta">${escapeHtml(statusLabel(profile.status))} · ${escapeHtml(statusLabel(profile.loginState ?? "unchecked"))} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
+      <span class="row-meta">${escapeHtml(profileKindLabel(profile))} · ${escapeHtml(statusLabel(profile.status))} · ${escapeHtml(statusLabel(profile.loginState ?? "unchecked"))} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
     `;
     button.addEventListener("click", () => selectProfile(profile.id));
     elements.profileList.append(button);
   }
+  elements.profileSelect.append(savedGroup);
+
+  const localOptions = state.localBrowserProfiles.filter((profile) => !profile.existingProfileId);
+  if (localOptions.length) {
+    const localGroup = document.createElement("optgroup");
+    localGroup.label = t("localBrowserProfiles");
+    for (const profile of localOptions) {
+      const option = document.createElement("option");
+      option.value = localProfileOptionValue(profile.id);
+      option.textContent = `${profile.accountLabel || profile.profileDirectory} · ${profile.browserName} · ${profile.profileDirectory}`;
+      localGroup.append(option);
+    }
+    elements.profileSelect.append(localGroup);
+  }
 
   const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
-  const selectedProfile = workflow?.defaultRun?.profileId ?? state.selectedProfileId ?? "";
+  const selectedProfile = state.selectedProfileId ?? workflow?.defaultRun?.profileId ?? "";
   if ([...elements.profileSelect.options].some((option) => option.value === selectedProfile)) {
     elements.profileSelect.value = selectedProfile;
+  }
+}
+
+function renderLocalBrowserProfiles() {
+  elements.localProfileSelect.innerHTML = "";
+  if (!state.localBrowserProfiles.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = t("noLocalProfiles");
+    elements.localProfileSelect.append(option);
+    return;
+  }
+  for (const profile of state.localBrowserProfiles) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    const imported = profile.existingProfileId ? ` · ${profile.existingProfileId}` : "";
+    option.textContent = `${profile.accountLabel || profile.profileDirectory} · ${profile.browserName} · ${profile.profileDirectory}${imported}`;
+    elements.localProfileSelect.append(option);
   }
 }
 
@@ -1543,11 +1643,20 @@ function renderGraph() {
     item.innerHTML = `
       <div class="node-head">
         <span class="node-action">${actionLabelHtml(node.action)}</span>
-        <span class="node-status">${escapeHtml(statusLabel(status))}</span>
+        <span class="node-controls">
+          <span class="node-status">${escapeHtml(statusLabel(status))}</span>
+          <button class="node-run-button" type="button" data-run-node-id="${escapeAttribute(node.id)}" title="${escapeAttribute(t("runToNode"))}" aria-label="${escapeAttribute(t("runToNode"))}">▶</button>
+        </span>
       </div>
       <strong>${escapeHtml(node.label)}</strong>
       <span class="node-meta">${escapeHtml(node.meta)}</span>
     `;
+    const runButton = item.querySelector("[data-run-node-id]");
+    runButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+    runButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      runWorkflowToNode(node.id);
+    });
     item.addEventListener("pointerdown", (event) => startGraphDrag(event, node.id));
     item.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -3176,7 +3285,11 @@ function selectWorkflow(id) {
   elements.workflowDescription.value = workflow.description ?? "";
   elements.workflowJson.value = formatJson(workflow.workflow);
   elements.runMode.value = workflow.defaultRun?.mode ?? "dry-run";
-  elements.profileSelect.value = workflow.defaultRun?.profileId ?? "";
+  const defaultProfileId = workflow.defaultRun?.profileId ?? "";
+  if (defaultProfileId && state.profiles.some((profile) => profile.id === defaultProfileId)) {
+    state.selectedProfileId = defaultProfileId;
+  }
+  elements.profileSelect.value = defaultProfileId;
   elements.approvalToggle.value = "keep";
   elements.operationModesJson.value = formatJson(workflow.defaultRun?.context?.operationModes ?? detectOperationModes(workflow.workflow));
   elements.runInputJson.value = formatJson(workflow.defaultRun?.input ?? {});
@@ -3198,6 +3311,8 @@ function selectProfile(id) {
   elements.profileLoginState.value = profile.loginState ?? "unchecked";
   elements.profileStatus.value = profile.status;
   elements.profileDir.value = profile.profileDir ?? "";
+  elements.profileDirectory.value = profile.profileDirectory ?? "";
+  elements.profileBrowserChannel.value = profile.browserChannel ?? "";
   elements.profileCheckUrl.value = profile.sessionCheck?.url ?? "";
   elements.profileAccountSelector.value = profile.sessionCheck?.accountSelector ?? "";
   elements.profileRate.value = profile.rateLimit?.maxPerMinute ?? "";
@@ -3359,6 +3474,26 @@ function summarizeRunActivity(run, events = []) {
   const latestStepEvent = [...events].reverse().find((event) => event.stepId);
   const profile = run.profileName || run.profileId || t("noProfile");
   if (!latestStepEvent) {
+    const blockedState = run.error?.details?.blockedState;
+    if (run.status === "blocked" || blockedState) {
+      return {
+        title: statusLabel("blocked"),
+        detail: t("runActivityBlocked", {
+          step: t("browserStartup"),
+          state: blockedStateLabel(blockedState),
+          hint: recoveryHintLabel(blockedState, run.error?.details?.recoveryHint ?? "")
+        })
+      };
+    }
+    if (run.status === "failed") {
+      return {
+        title: statusLabel("failed"),
+        detail: t("runActivityFailed", {
+          step: t("browserStartup"),
+          error: cleanErrorMessage(run.error?.message ?? "")
+        })
+      };
+    }
     return {
       title: statusLabel(run.status),
       detail: run.status === "queued"
@@ -3379,7 +3514,7 @@ function summarizeRunActivity(run, events = []) {
       detail: t("runActivityBlocked", {
         step: stepText,
         state: blockedStateLabel(blockedState),
-        hint: failure.details?.recoveryHint ?? run.error?.details?.recoveryHint ?? ""
+        hint: recoveryHintLabel(blockedState, failure.details?.recoveryHint ?? run.error?.details?.recoveryHint ?? "")
       })
     };
   }
@@ -3412,7 +3547,9 @@ function eventDetail(event, run = null) {
   if (target) parts.push(target);
   if (event.error?.message) parts.push(cleanErrorMessage(event.error.message));
   if (event.error?.details?.blockedState) parts.push(blockedStateLabel(event.error.details.blockedState));
-  if (event.error?.details?.recoveryHint) parts.push(event.error.details.recoveryHint);
+  if (event.error?.details?.recoveryHint) {
+    parts.push(recoveryHintLabel(event.error.details.blockedState, event.error.details.recoveryHint));
+  }
   if (event.result?.url) parts.push(event.result.url);
   if (event.workflow?.name) parts.push(event.workflow.name);
   return parts.join(" · ");
@@ -3914,6 +4051,7 @@ async function saveSelectedWorkflow() {
     const id = elements.workflowId.value.trim();
     const context = parseJson(elements.runContextJson.value, "Context");
     applyOperationModes(context);
+    const profileId = await resolveSelectedProfileId();
     const workflowDefinition = parseJson(elements.workflowJson.value, "Workflow");
     commitWorkflowDraft(workflowDefinition, { syncTextarea: false });
     const body = {
@@ -3924,7 +4062,7 @@ async function saveSelectedWorkflow() {
       graph: graphRecordForSave(),
       defaultRun: {
         mode: elements.runMode.value,
-        profileId: elements.profileSelect.value || null,
+        profileId,
         input: parseJson(elements.runInputJson.value, "Input"),
         context,
         driverConfig: parseJson(elements.driverConfigJson.value, "Driver")
@@ -3967,6 +4105,8 @@ async function saveSelectedProfile() {
       loginState: elements.profileLoginState.value,
       status: elements.profileStatus.value,
       profileDir: elements.profileDir.value.trim(),
+      profileDirectory: elements.profileDirectory.value.trim(),
+      browserChannel: elements.profileBrowserChannel.value.trim(),
       sessionCheck: profileSessionCheckFromForm(),
       rateLimit: {
         maxPerMinute: elements.profileRate.value ? Number(elements.profileRate.value) : null
@@ -3986,6 +4126,75 @@ async function saveSelectedProfile() {
   }
 }
 
+async function refreshLocalBrowserProfiles() {
+  try {
+    await loadLocalBrowserProfiles();
+    renderProfiles();
+    renderLocalBrowserProfiles();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function handleProfileSelectChange() {
+  const value = elements.profileSelect.value;
+  const localProfileId = localProfileIdFromOptionValue(value);
+  if (localProfileId) {
+    const localProfile = state.localBrowserProfiles.find((profile) => profile.id === localProfileId);
+    if (localProfile) await importAndSelectLocalProfile(localProfile);
+    return;
+  }
+  if (value) {
+    selectProfile(value);
+  }
+}
+
+async function applySelectedLocalProfile() {
+  try {
+    const localProfile = state.localBrowserProfiles.find((profile) => profile.id === elements.localProfileSelect.value);
+    if (!localProfile) return;
+    await importAndSelectLocalProfile(localProfile);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function importAndSelectLocalProfile(localProfile) {
+  if (localProfile.existingProfileId) {
+    selectProfile(localProfile.existingProfileId);
+    render();
+    showToast(t("localProfileImported"));
+    return localProfile.existingProfileId;
+  }
+  const body = {
+    ...localProfile,
+    id: uniqueProfileId(localProfile.id),
+    name: localProfile.name,
+    mode: "playwright",
+    status: "ready",
+    loginState: "unchecked"
+  };
+  delete body.browserName;
+  delete body.existingProfileId;
+  const data = await api("/api/profiles", {
+    method: "POST",
+    body
+  });
+  await Promise.all([loadProfiles(), loadLocalBrowserProfiles(), loadAudit()]);
+  selectProfile(data.profile.id);
+  render();
+  showToast(t("localProfileImported"));
+  return data.profile.id;
+}
+
+async function resolveSelectedProfileId() {
+  const value = elements.profileSelect.value;
+  const localProfileId = localProfileIdFromOptionValue(value);
+  if (!localProfileId) return value || null;
+  const localProfile = state.localBrowserProfiles.find((profile) => profile.id === localProfileId);
+  return localProfile ? await importAndSelectLocalProfile(localProfile) : null;
+}
+
 async function checkSelectedProfile() {
   try {
     const id = elements.profileId.value.trim();
@@ -3995,6 +4204,9 @@ async function checkSelectedProfile() {
       body: {
         platform: elements.profilePlatform.value.trim(),
         accountLabel: elements.profileAccountLabel.value.trim(),
+        profileDir: elements.profileDir.value.trim(),
+        profileDirectory: elements.profileDirectory.value.trim(),
+        browserChannel: elements.profileBrowserChannel.value.trim(),
         ...profileSessionCheckFromForm()
       }
     });
@@ -4016,24 +4228,85 @@ async function runSelectedWorkflow() {
     const context = parseJson(elements.runContextJson.value, "Context");
     applyOperationModes(context);
     applyApprovalToggle(context);
+    const profileId = await resolveSelectedProfileId();
     const data = await api(`/api/workflows/${encodeURIComponent(state.selectedWorkflowId)}/runs`, {
       method: "POST",
       body: {
         mode: elements.runMode.value,
-        profileId: elements.profileSelect.value || null,
+        profileId,
         input: parseJson(elements.runInputJson.value, "Input"),
         context,
         driverConfig: parseJson(elements.driverConfigJson.value, "Driver")
       }
     });
-    state.selectedRunId = data.run.id;
-    await loadRuns();
-    renderRuns();
-    await selectRun(data.run.id);
-    showToast(t("runQueued"));
+    await trackQueuedRun(data.run.id, t("runQueued"));
   } catch (error) {
     showToast(error.message);
   }
+}
+
+async function runWorkflowToNode(nodeId) {
+  if (!state.selectedWorkflowId || !nodeId) return;
+  try {
+    const workflowDefinition = parseJson(elements.workflowJson.value, "Workflow");
+    commitWorkflowDraft(workflowDefinition, { syncTextarea: false });
+    const context = parseJson(elements.runContextJson.value, "Context");
+    applyOperationModes(context);
+    applyApprovalToggle(context);
+    const profileId = await resolveSelectedProfileId();
+    const data = await api(`/api/workflows/${encodeURIComponent(state.selectedWorkflowId)}/runs`, {
+      method: "POST",
+      body: {
+        mode: elements.runMode.value,
+        profileId,
+        input: parseJson(elements.runInputJson.value, "Input"),
+        context,
+        driverConfig: parseJson(elements.driverConfigJson.value, "Driver"),
+        workflow: workflowDefinition,
+        debug: {
+          mode: "run-to-node",
+          targetStepId: nodeId
+        }
+      }
+    });
+    await trackQueuedRun(data.run.id, t("debugRunQueued", { step: nodeId }));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function trackQueuedRun(runId, queuedMessage) {
+  state.selectedRunId = runId;
+  await loadRuns();
+  renderRuns();
+  await selectRun(runId);
+  showToast(queuedMessage);
+
+  const settled = await waitForRunTerminal(runId, 3200);
+  if (!settled) return;
+  await loadRuns();
+  renderRuns();
+  await selectRun(runId);
+  const activity = summarizeRunActivity(settled.run, settled.events ?? []);
+  showToast(activity.detail || activity.title);
+}
+
+async function waitForRunTerminal(runId, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const data = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    if (isTerminalRunStatus(data.run?.status)) return data;
+    await sleep(250);
+  }
+  return null;
+}
+
+function isTerminalRunStatus(status) {
+  return ["completed", "failed", "blocked", "canceled"].includes(status);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function cancelSelectedRun() {
@@ -4139,6 +4412,8 @@ function createBlankProfile() {
     loginState: "unchecked",
     status: "ready",
     profileDir: "",
+    profileDirectory: "",
+    browserChannel: "",
     sessionCheck: {
       platform: "",
       url: "",
@@ -4197,12 +4472,20 @@ function appUrl(path) {
 
 function setLanguage(language) {
   state.language = language === "zh" ? "zh" : "en";
-  localStorage.setItem("webops-forge-language", state.language);
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, state.language);
+  localStorage.setItem(LANGUAGE_CHOICE_STORAGE_KEY, "manual");
   applyStaticTranslations();
   render();
   if (state.selectedRunId) {
     void selectRun(state.selectedRunId);
   }
+}
+
+function getInitialLanguage() {
+  const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  const hasManualChoice = localStorage.getItem(LANGUAGE_CHOICE_STORAGE_KEY) === "manual";
+  if (hasManualChoice && (storedLanguage === "en" || storedLanguage === "zh")) return storedLanguage;
+  return "zh";
 }
 
 function applyStaticTranslations() {
@@ -4252,6 +4535,13 @@ function blockedStateLabel(value) {
     ?? code.replace(/_/g, " ");
 }
 
+function recoveryHintLabel(blockedState, fallback = "") {
+  const code = String(blockedState ?? "");
+  return RECOVERY_HINT_LABELS[state.language]?.[code]
+    ?? RECOVERY_HINT_LABELS.en[code]
+    ?? fallback;
+}
+
 function actionLabel(value) {
   const { primary, secondary } = actionLabelParts(value);
   return [primary, secondary].filter(Boolean).join(" ");
@@ -4281,6 +4571,31 @@ function actionLabelParts(value) {
 
 function branchLabel(value) {
   return BRANCH_LABELS[state.language]?.[value] ?? BRANCH_LABELS.en[value] ?? String(value ?? "");
+}
+
+function profileKindLabel(profile) {
+  if (profile.mode === "dry-run") {
+    return state.language === "zh" ? "模拟数据自测" : "dry-run fixture";
+  }
+  if (profile.profileDirectory) {
+    const name = profile.browserChannel === "chrome"
+      ? "Chrome"
+      : profile.browserChannel || profile.browserType || "browser";
+    return `${name} ${profile.profileDirectory}`;
+  }
+  if (profile.profileDir) {
+    return state.language === "zh" ? "真实浏览器目录" : "browser directory";
+  }
+  return state.language === "zh" ? "真实浏览器模板（未绑定目录）" : "browser template (no directory)";
+}
+
+function localProfileOptionValue(id) {
+  return `local:${id}`;
+}
+
+function localProfileIdFromOptionValue(value) {
+  const text = String(value ?? "");
+  return text.startsWith("local:") ? text.slice("local:".length) : "";
 }
 
 function parseJson(value, label) {
@@ -4383,6 +4698,17 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return text || `item-${Date.now().toString(36)}`;
+}
+
+function uniqueProfileId(baseId) {
+  const base = slugify(baseId || "profile");
+  const ids = new Set(state.profiles.map((profile) => profile.id));
+  if (!ids.has(base)) return base;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}-${index}`;
+    if (!ids.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now().toString(36)}`;
 }
 
 function templateSafeId(value) {

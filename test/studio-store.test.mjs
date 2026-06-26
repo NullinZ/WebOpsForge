@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { StudioStore, createRunQueue, defineWorkflow, probeProfileSession } from "../src/index.mjs";
+import { createWorkflowDebugSlice } from "../src/studio/debug-workflow.mjs";
+import { discoverLocalBrowserProfiles } from "../src/studio/local-browser-profiles.mjs";
 
 test("studio store seeds workflow and queue completes a dry-run", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-studio-"));
@@ -192,6 +194,107 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     assert.ok(audit.some((item) => item.type === "picker.event_received"));
     assert.ok(audit.some((item) => item.type === "picker.session_started"));
     assert.ok(audit.some((item) => item.type === "picker.session_cleared"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("discovers local browser profiles from Chrome user data", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-browser-profiles-"));
+  try {
+    const chromeRoot = path.join(dir, "chrome");
+    const profileRoot = path.join(chromeRoot, "Profile 1");
+    await mkdir(profileRoot, { recursive: true });
+    await writeFile(path.join(chromeRoot, "Local State"), JSON.stringify({
+      profile: { info_cache: { "Profile 1": { name: "Local Operator" } } }
+    }));
+    await writeFile(path.join(profileRoot, "Preferences"), JSON.stringify({
+      profile: { name: "Chrome Work" },
+      account_info: [{ full_name: "Operator Name", email: "operator@example.invalid" }]
+    }));
+
+    const profiles = await discoverLocalBrowserProfiles({
+      roots: [{
+        id: "chrome",
+        name: "Google Chrome",
+        browserType: "chromium",
+        browserChannel: "chrome",
+        userDataDir: chromeRoot
+      }],
+      existingProfiles: [{
+        id: "saved-chrome-work",
+        mode: "playwright",
+        profileDir: chromeRoot,
+        profileDirectory: "Profile 1",
+        browserChannel: "chrome"
+      }]
+    });
+
+    assert.equal(profiles.length, 1);
+    assert.equal(profiles[0].accountLabel, "Chrome Work");
+    assert.equal(profiles[0].profileDir, chromeRoot);
+    assert.equal(profiles[0].profileDirectory, "Profile 1");
+    assert.equal(profiles[0].browserChannel, "chrome");
+    assert.equal(profiles[0].existingProfileId, "saved-chrome-work");
+    assert.equal(JSON.stringify(profiles).includes("operator@example.invalid"), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("creates a debug workflow slice to a nested operation node", () => {
+  const workflow = defineWorkflow({
+    name: "debug-slice-fixture",
+    steps: [
+      { id: "prepare", action: "checkpoint", label: "prepare" },
+      {
+        id: "search",
+        action: "operation",
+        browserSteps: [
+          { id: "open", action: "goto", url: "https://example.local/search" },
+          { id: "fill", action: "fill", selector: "#q", value: "{{input.query}}" },
+          { id: "submit", action: "click", selector: "#submit" }
+        ]
+      },
+      { id: "after", action: "checkpoint", label: "after" }
+    ]
+  });
+
+  const debug = createWorkflowDebugSlice(workflow, "search.fill");
+
+  assert.deepEqual(debug.steps.map((step) => step.id), ["prepare", "search"]);
+  assert.equal(debug.steps[1].mode, "browser");
+  assert.deepEqual(debug.steps[1].browserSteps.map((step) => step.id), ["search.open", "search.fill"]);
+  assert.equal(debug.metadata.debug.targetStepId, "search.fill");
+});
+
+test("run queue executes a debug workflow override instead of the full workflow", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-debug-run-"));
+  try {
+    const store = new StudioStore({ dir });
+    await store.init();
+    const workflow = await store.saveWorkflow({
+      id: "debug-run-fixture",
+      name: "Debug run fixture",
+      workflow: defineWorkflow({
+        name: "debug-run-fixture",
+        steps: [
+          { id: "one", action: "checkpoint", label: "one" },
+          { id: "two", action: "checkpoint", label: "two" }
+        ]
+      })
+    });
+    const run = await store.createRun({
+      workflowId: workflow.id,
+      workflowOverride: createWorkflowDebugSlice(workflow.workflow, "one"),
+      debug: { mode: "run-to-node", targetStepId: "one" }
+    });
+    const queue = createRunQueue({ store });
+    queue.enqueue(run.id);
+    await waitForRun(store, run.id);
+
+    const completed = (await store.readRunEvents(run.id)).filter((event) => event.type === "step.completed");
+    assert.deepEqual(completed.map((event) => event.stepId), ["one"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

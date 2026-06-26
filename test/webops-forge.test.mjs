@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ import {
   createDryRunDriver,
   createFileEvidenceStore,
   createMemoryEvidenceStore,
+  createPlaywrightDriver,
   createRateLimiter,
   createRegistryPack,
   detectBlockedState,
@@ -200,8 +201,34 @@ test("classifies common commercial run blockers", () => {
   assert.equal(approval.profileStatus, "ready");
 
   assert.equal(detectBlockedState(new BrowserActionError("Selector not found in dry-run page: .price")), "selector_drift");
+  assert.equal(detectBlockedState(new BrowserActionError("Chrome profile is already open", { code: "PROFILE_BUSY" })), "profile_busy");
   assert.equal(detectBlockedState({ message: "Captcha verification required" }), "captcha_or_verification");
   assert.equal(detectBlockedState({ details: { status: 429 }, message: "Too many requests" }), "rate_limited");
+});
+
+test("blocks persistent profile launch when Chrome owns the profile lock", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-locked-profile-"));
+  try {
+    await symlink(`local-${process.pid}`, path.join(dir, "SingletonLock"));
+    await assert.rejects(
+      createPlaywrightDriver({
+        profileDir: dir,
+        profileDirectory: "Profile 2",
+        browserChannel: "chrome"
+      }),
+      (error) => {
+        assert.equal(error.code, "PROFILE_BUSY");
+        assert.equal(error.details.blockedState, undefined);
+        assert.equal(error.details.reason, "profile_busy");
+        assert.equal(error.details.profileDirectory, "Profile 2");
+        assert.equal(error.details.browserChannel, "chrome");
+        assert.equal(error.details.lockPid, process.pid);
+        return true;
+      }
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("writes file evidence records and artifacts", async () => {

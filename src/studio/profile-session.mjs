@@ -51,7 +51,8 @@ async function probePlaywrightSession({ profile, sessionCheck, overrides, clock 
   const driver = await createPlaywrightDriver({
     browserType: profile.browserType ?? "chromium",
     profileDir: overrides.profileDir ?? profile.profileDir,
-    headless: Boolean(overrides.headless ?? profile.headless ?? false)
+    headless: Boolean(overrides.headless ?? profile.headless ?? false),
+    launchOptions: createProfileLaunchOptions({ profile, overrides })
   });
 
   try {
@@ -79,6 +80,35 @@ async function probePlaywrightSession({ profile, sessionCheck, overrides, clock 
   } finally {
     await driver.close?.();
   }
+}
+
+function createProfileLaunchOptions({ profile, overrides }) {
+  const launchOptions = { ...(overrides.launchOptions ?? {}) };
+  const browserChannel = overrides.browserChannel ?? profile.browserChannel;
+  const profileDirectory = overrides.profileDirectory ?? profile.profileDirectory;
+  if (browserChannel) launchOptions.channel = browserChannel;
+  if (profileDirectory) {
+    const args = Array.isArray(launchOptions.args) ? [...launchOptions.args] : [];
+    const profileArg = `--profile-directory=${profileDirectory}`;
+    const existingIndex = args.findIndex((arg) => String(arg).startsWith("--profile-directory="));
+    if (existingIndex !== -1) args.splice(existingIndex, 1);
+    args.unshift(profileArg);
+    launchOptions.args = args;
+    launchOptions.ignoreDefaultArgs = mergeIgnoreDefaultArgs(
+      launchOptions.ignoreDefaultArgs,
+      ["--disable-extensions"]
+    );
+  }
+  return launchOptions;
+}
+
+function mergeIgnoreDefaultArgs(currentValue, additionalValues) {
+  if (currentValue === true) return true;
+  const values = [
+    ...(Array.isArray(currentValue) ? currentValue : []),
+    ...additionalValues
+  ].map(String).filter(Boolean);
+  return values.length ? Array.from(new Set(values)) : undefined;
 }
 
 async function extractOptional(driver, selector, timeoutMs) {
