@@ -300,7 +300,7 @@ test("run queue executes a debug workflow override instead of the full workflow"
   }
 });
 
-test("run queue hands goto-only Chrome profile debug runs to the local browser", async () => {
+test("run queue can explicitly hand goto-only Chrome profile debug runs to the front browser window", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-chrome-handoff-run-"));
   try {
     const store = new StudioStore({ dir });
@@ -330,6 +330,7 @@ test("run queue hands goto-only Chrome profile debug runs to the local browser",
       workflowId: workflow.id,
       mode: "playwright",
       profileId: profile.id,
+      driverConfig: { chromeHandoff: "front-window" },
       workflowOverride: createWorkflowDebugSlice(workflow.workflow, "open"),
       debug: { mode: "run-to-node", targetStepId: "open" }
     });

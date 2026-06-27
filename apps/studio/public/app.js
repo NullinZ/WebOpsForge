@@ -5,6 +5,8 @@ const state = {
   workflows: [],
   profiles: [],
   localBrowserProfiles: [],
+  localBrowserProfilesLoaded: false,
+  selectedLocalProfileId: "",
   runs: [],
   audit: [],
   pickerEvents: [],
@@ -314,7 +316,7 @@ const I18N = {
     localBrowserProfile: "Local Browser Profile",
     localBrowserProfiles: "Local Browser Profiles (select to import)",
     localProfileImported: "Local browser profile imported",
-    noLocalProfiles: "No local browser profiles found",
+    noLocalProfiles: "Click Refresh Local to discover browser profiles",
     new: "New",
     nodeEditor: "Node Editor",
     nodeEditorApi: "API branch",
@@ -481,7 +483,7 @@ const I18N = {
     localBrowserProfile: "本机浏览器 Profile",
     localBrowserProfiles: "本机浏览器 Profile（选择即导入）",
     localProfileImported: "已导入本机浏览器 Profile",
-    noLocalProfiles: "未找到本机浏览器 Profile",
+    noLocalProfiles: "点击“刷新本机”获取浏览器 Profile",
     new: "新建",
     nodeEditor: "节点编辑",
     nodeEditorApi: "API 分支",
@@ -658,10 +660,10 @@ const BLOCKED_STATE_LABELS = {
 
 const RECOVERY_HINT_LABELS = {
   en: {
-    profile_busy: "Close the normal Chrome window using this profile, then rerun, or choose another profile."
+    profile_busy: "This Chrome profile is already open outside WebOps Forge. Use CDP/extension control, or quit Chrome and let WebOps Forge launch this profile."
   },
   zh: {
-    profile_busy: "请先完全退出正在占用这个 Profile 的 Chrome，重新运行；或改用 Local Chromium / 其他 Profile。"
+    profile_busy: "这个 Profile 正被普通 Chrome 使用。要按此 Profile 自动执行，需要接入 CDP/扩展执行器；或先退出 Chrome，让 WebOps Forge 启动此 Profile。"
   }
 };
 
@@ -1122,6 +1124,9 @@ document.querySelector("#newProfileButton").addEventListener("click", () => crea
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
 elements.profileSelect.addEventListener("change", () => handleProfileSelectChange());
+elements.localProfileSelect.addEventListener("change", () => {
+  state.selectedLocalProfileId = elements.localProfileSelect.value;
+});
 document.querySelector("#refreshLocalProfilesButton").addEventListener("click", () => refreshLocalBrowserProfiles());
 document.querySelector("#applyLocalProfileButton").addEventListener("click", () => applySelectedLocalProfile());
 document.querySelector("#newRegistryItemButton").addEventListener("click", () => createBlankRegistryItem());
@@ -1182,7 +1187,7 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadLocalBrowserProfiles(), loadRuns(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
+  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   if (!state.selectedRegistryId) selectDefaultRegistryItem();
@@ -1212,6 +1217,7 @@ async function loadProfiles() {
 async function loadLocalBrowserProfiles() {
   const data = await api("/api/profiles/discovered");
   state.localBrowserProfiles = data.profiles;
+  state.localBrowserProfilesLoaded = true;
 }
 
 async function loadRuns() {
@@ -1326,6 +1332,7 @@ function renderProfiles() {
 }
 
 function renderLocalBrowserProfiles() {
+  const selectedId = state.selectedLocalProfileId || elements.localProfileSelect.value;
   elements.localProfileSelect.innerHTML = "";
   if (!state.localBrowserProfiles.length) {
     const option = document.createElement("option");
@@ -1340,6 +1347,12 @@ function renderLocalBrowserProfiles() {
     const imported = profile.existingProfileId ? ` · ${profile.existingProfileId}` : "";
     option.textContent = `${profile.accountLabel || profile.profileDirectory} · ${profile.browserName} · ${profile.profileDirectory}${imported}`;
     elements.localProfileSelect.append(option);
+  }
+  if ([...elements.localProfileSelect.options].some((option) => option.value === selectedId)) {
+    elements.localProfileSelect.value = selectedId;
+    state.selectedLocalProfileId = selectedId;
+  } else {
+    state.selectedLocalProfileId = elements.localProfileSelect.value;
   }
 }
 
@@ -3303,6 +3316,8 @@ function selectProfile(id) {
   const profile = state.profiles.find((item) => item.id === id);
   if (!profile) return;
   state.selectedProfileId = id;
+  const localProfile = localBrowserProfileForSavedProfile(profile);
+  if (localProfile) state.selectedLocalProfileId = localProfile.id;
   elements.profileId.value = profile.id;
   elements.profileName.value = profile.name;
   elements.profileMode.value = profile.mode;
@@ -4129,6 +4144,9 @@ async function saveSelectedProfile() {
 async function refreshLocalBrowserProfiles() {
   try {
     await loadLocalBrowserProfiles();
+    const selectedProfile = state.profiles.find((profile) => profile.id === state.selectedProfileId);
+    const localProfile = localBrowserProfileForSavedProfile(selectedProfile);
+    if (localProfile) state.selectedLocalProfileId = localProfile.id;
     renderProfiles();
     renderLocalBrowserProfiles();
   } catch (error) {
@@ -4160,6 +4178,7 @@ async function applySelectedLocalProfile() {
 }
 
 async function importAndSelectLocalProfile(localProfile) {
+  state.selectedLocalProfileId = localProfile.id;
   if (localProfile.existingProfileId) {
     selectProfile(localProfile.existingProfileId);
     render();
@@ -4181,6 +4200,7 @@ async function importAndSelectLocalProfile(localProfile) {
     body
   });
   await Promise.all([loadProfiles(), loadLocalBrowserProfiles(), loadAudit()]);
+  state.selectedLocalProfileId = localProfile.id;
   selectProfile(data.profile.id);
   render();
   showToast(t("localProfileImported"));
@@ -4596,6 +4616,20 @@ function localProfileOptionValue(id) {
 function localProfileIdFromOptionValue(value) {
   const text = String(value ?? "");
   return text.startsWith("local:") ? text.slice("local:".length) : "";
+}
+
+function localBrowserProfileForSavedProfile(profile) {
+  if (!profile) return null;
+  return state.localBrowserProfiles.find((localProfile) => {
+    if (localProfile.existingProfileId === profile.id) return true;
+    return normalizeLocalPath(localProfile.profileDir) === normalizeLocalPath(profile.profileDir)
+      && String(localProfile.profileDirectory ?? "") === String(profile.profileDirectory ?? "")
+      && String(localProfile.browserChannel ?? "") === String(profile.browserChannel ?? "");
+  }) ?? null;
+}
+
+function normalizeLocalPath(value) {
+  return String(value ?? "").replace(/\/+$/g, "");
 }
 
 function parseJson(value, label) {

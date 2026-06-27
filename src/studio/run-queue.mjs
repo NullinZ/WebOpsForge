@@ -141,6 +141,7 @@ async function createDriver(run, profile = null, { chromeHandoffOpener = null } 
 }
 
 function shouldUseChromeProfileHandoff(run, profile) {
+  if (run.driverConfig?.chromeHandoff !== "front-window") return false;
   if (process.platform !== "darwin") return false;
   if (run.debug?.mode !== "run-to-node") return false;
   if (!profile?.profileDirectory) return false;
