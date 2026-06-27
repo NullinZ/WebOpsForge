@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { StudioStore, createRunQueue, defineWorkflow, probeProfileSession } from "../src/index.mjs";
+import { StudioStore, createRunQueue, defineWorkflow, normalizePickerEvent, probeProfileSession } from "../src/index.mjs";
 import { createWorkflowDebugSlice } from "../src/studio/debug-workflow.mjs";
 import { discoverLocalBrowserProfiles } from "../src/studio/local-browser-profiles.mjs";
 
@@ -200,6 +200,33 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("normalizes picker events away from generated class selectors", () => {
+  const pickerEvent = normalizePickerEvent({
+    url: "https://www.douyin.com/",
+    title: "抖音",
+    selector: "div.YDoaql1z",
+    recommendedSelector: "div.YDoaql1z",
+    target: {
+      tagName: "div",
+      attributes: {
+        id: "picker_351d97d2cdae4d1d96"
+      },
+      classList: ["YDoaql1z", "search-card"],
+      text: "发布"
+    },
+    selectorCandidates: [
+      { selector: "div.YDoaql1z", source: "class", score: 44, matchCount: 1, visibleCount: 1, unique: true },
+      { selector: "div.search-card", source: "class", score: 40, matchCount: 1, visibleCount: 1, unique: true },
+      { selector: "body > main > div:nth-of-type(1)", source: "dom-path", score: 18, matchCount: 1, visibleCount: 1, unique: true }
+    ]
+  });
+
+  assert.equal(pickerEvent.recommendedSelector, "div.search-card");
+  assert.deepEqual(pickerEvent.targetIdentity.classList, ["search-card"]);
+  assert.equal(pickerEvent.targetIdentity.attributes.id, undefined);
+  assert.ok(!pickerEvent.selectorCandidates.some((candidate) => candidate.selector.includes("YDoaql1z")));
 });
 
 test("studio store persists profile network settings", async () => {

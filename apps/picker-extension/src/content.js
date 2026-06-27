@@ -27,6 +27,25 @@
     type: 42,
     title: 42
   };
+  const TRANSIENT_CLASS_NAMES = new Set([
+    "active",
+    "checked",
+    "current",
+    "disabled",
+    "focus",
+    "focused",
+    "hidden",
+    "hover",
+    "is-active",
+    "is-checked",
+    "is-current",
+    "is-disabled",
+    "is-hidden",
+    "is-open",
+    "open",
+    "selected",
+    "show"
+  ]);
 
   const picker = {
     active: false,
@@ -158,8 +177,8 @@
       }
     }
 
-    if (el.id) {
-      const idScore = looksGeneratedToken(el.id) ? 42 : 66;
+    if (el.id && !looksGeneratedToken(el.id)) {
+      const idScore = 66;
       pushSelectorCandidate(candidates, `#${CSS.escape(el.id)}`, "id", idScore, "id exact match");
       pushSelectorCandidate(candidates, `${tag}#${CSS.escape(el.id)}`, "id", idScore - 4, "tag and id exact match");
     }
@@ -231,6 +250,7 @@
     ]);
     for (const name of names) {
       const value = el.getAttribute?.(name);
+      if (name === "id" && looksGeneratedToken(value)) continue;
       if (value && value.length <= 240) attributes[name] = value;
     }
     for (const attr of Array.from(el.attributes || [])) {
@@ -243,7 +263,7 @@
       role: el.getAttribute("role") || "",
       inputType: el.getAttribute("type") || "",
       attributes,
-      classList: Array.from(el.classList || []).slice(0, 12),
+      classList: stableClassListFor(el, 12),
       text: cleanPickerText(el.textContent || ""),
       labelText: associatedLabelText(el),
       accessibleName: accessibleName(el),
@@ -258,7 +278,7 @@
 
   function createCssSelector(el) {
     if (!el || el.nodeType !== 1) return "";
-    if (el.id) return `#${CSS.escape(el.id)}`;
+    if (el.id && !looksGeneratedToken(el.id)) return `#${CSS.escape(el.id)}`;
 
     const parts = [];
     let current = el;
@@ -315,11 +335,24 @@
   }
 
   function classSelectorFor(el, limit) {
-    return Array.from(el.classList || [])
-      .filter((className) => /^[a-zA-Z0-9_-]+$/.test(className) && !looksGeneratedToken(className))
+    return stableClassListFor(el, limit)
       .slice(0, limit)
       .map((className) => `.${CSS.escape(className)}`)
       .join("");
+  }
+
+  function stableClassListFor(el, limit = 12) {
+    return Array.from(el?.classList || [])
+      .filter(isStableClassName)
+      .slice(0, limit);
+  }
+
+  function isStableClassName(className) {
+    const text = String(className || "").trim();
+    return /^[a-zA-Z0-9_-]+$/.test(text)
+      && !TRANSIENT_CLASS_NAMES.has(text)
+      && !looksGeneratedToken(text)
+      && !looksGeneratedClassName(text);
   }
 
   function isVisibleElement(el) {
@@ -509,6 +542,13 @@
       if (targetSatisfiesState(last, state)) return last;
       await sleep(120);
     }
+    if (last?.identityMode && last?.attempts?.some((attempt) => ["low_score", "ambiguous", "no_visible_match"].includes(attempt.status))) {
+      throw executorError(`Target identity could not be matched safely for selector: ${params.selector || ""}`, {
+        reason: "target_identity_not_matched",
+        selector: params.selector || "",
+        attempts: last.attempts || []
+      });
+    }
     throw executorError(`Selector not found: ${params.selector || ""}`, {
       reason: "selector_not_found",
       selector: params.selector || "",
@@ -518,6 +558,7 @@
 
   function resolveWebOpsTarget(params) {
     const selectors = candidateSelectors(params);
+    const identity = params.targetIdentity && typeof params.targetIdentity === "object" ? params.targetIdentity : null;
     const attempts = [];
     for (const selector of selectors) {
       let nodes = [];
@@ -528,6 +569,39 @@
         continue;
       }
       const visibleNodes = nodes.filter((node) => isVisibleElement(node));
+      if (identity) {
+        const resolved = resolveIdentityMatch(nodes, identity);
+        attempts.push({
+          selector,
+          status: nodes.length ? resolved.status : "not_found",
+          matchCount: nodes.length,
+          visibleCount: resolved.visibleCount,
+          topScore: resolved.topScore,
+          secondScore: resolved.secondScore,
+          truncated: resolved.truncated
+        });
+        if (resolved.element) {
+          return {
+            element: resolved.element,
+            selector,
+            attempts,
+            identityMode: true,
+            target: {
+              selector,
+              requestedSelector: params.selector || "",
+              strategy: "targetIdentity",
+              index: resolved.index,
+              count: nodes.length,
+              visibleCount: resolved.visibleCount,
+              score: resolved.topScore,
+              secondScore: resolved.secondScore,
+              attempts
+            }
+          };
+        }
+        continue;
+      }
+
       attempts.push({
         selector,
         status: nodes.length ? "matched" : "not_found",
@@ -540,6 +614,7 @@
           element,
           selector,
           attempts,
+          identityMode: false,
           target: {
             selector,
             requestedSelector: params.selector || "",
@@ -553,6 +628,7 @@
       element: null,
       selector: params.selector || selectors[0] || "",
       attempts,
+      identityMode: Boolean(identity),
       target: {
         selector: params.selector || selectors[0] || "",
         requestedSelector: params.selector || "",
@@ -564,12 +640,142 @@
 
   function candidateSelectors(params) {
     const selectors = [];
+    if (params.targetIdentity?.recommendedSelector) selectors.push(params.targetIdentity.recommendedSelector);
     if (params.selector) selectors.push(params.selector);
     for (const candidate of params.selectorCandidates || params.targetIdentity?.selectorCandidates || []) {
       if (candidate?.selector) selectors.push(candidate.selector);
     }
-    if (params.targetIdentity?.recommendedSelector) selectors.push(params.targetIdentity.recommendedSelector);
+    selectors.push(...identityFallbackSelectors(params.targetIdentity));
     return Array.from(new Set(selectors.filter(Boolean)));
+  }
+
+  function identityFallbackSelectors(identity) {
+    if (!identity || typeof identity !== "object") return [];
+    const tag = cleanTagName(identity.tagName);
+    const attributes = identity.attributes && typeof identity.attributes === "object" ? identity.attributes : {};
+    const selectors = [];
+    for (const name of STABLE_SELECTOR_ATTRIBUTES) {
+      const value = attributes[name];
+      if (!value || String(value).length > 180) continue;
+      if (name === "id" && looksGeneratedToken(value)) continue;
+      const attrSelector = `[${name}="${cssAttributeValue(value)}"]`;
+      if (tag) selectors.push(`${tag}${attrSelector}`);
+      selectors.push(attrSelector);
+    }
+    const classSelector = (Array.isArray(identity.classList) ? identity.classList : [])
+      .filter(isStableClassName)
+      .slice(0, 2)
+      .map((className) => `.${CSS.escape(className)}`)
+      .join("");
+    if (tag && classSelector) selectors.push(`${tag}${classSelector}`);
+    if (tag && ["a", "button", "input", "select", "textarea"].includes(tag)) selectors.push(tag);
+    if (tag && identityHasTextSignal(identity)) selectors.push(tag);
+    return selectors;
+  }
+
+  function resolveIdentityMatch(nodes, identity) {
+    const minScore = Number(identity.matchPolicy?.minScore ?? 28);
+    const ambiguityMargin = Number(identity.matchPolicy?.ambiguityMargin ?? 8);
+    const cappedNodes = nodes.length > 2000 ? nodes.slice(0, 2000) : nodes;
+    const scored = scoreElementsForIdentity(cappedNodes, identity);
+    const visibleScored = identity.matchPolicy?.requireVisible === false
+      ? scored
+      : scored.filter((item) => item.visible);
+    const ranked = visibleScored.sort((a, b) => b.score - a.score);
+    const top = ranked[0];
+    const second = ranked[1];
+    const base = {
+      element: null,
+      index: -1,
+      visibleCount: visibleScored.length,
+      topScore: top?.score ?? 0,
+      secondScore: second?.score ?? 0,
+      truncated: cappedNodes.length !== nodes.length
+    };
+    if (!top) return { ...base, status: "no_visible_match" };
+    if (top.score < minScore) return { ...base, status: "low_score" };
+    if (ranked.length > 1 && top.score - (second?.score ?? 0) < ambiguityMargin) {
+      return { ...base, status: "ambiguous" };
+    }
+    return {
+      ...base,
+      status: "scored",
+      element: cappedNodes[top.index] || null,
+      index: top.index
+    };
+  }
+
+  function scoreElementsForIdentity(nodes, identity) {
+    const weights = {
+      "data-e2e": 34,
+      "data-testid": 34,
+      "data-test": 32,
+      "data-cy": 32,
+      "aria-label": 24,
+      placeholder: 24,
+      name: 20,
+      role: 18,
+      type: 14,
+      title: 14,
+      href: 10,
+      id: 18
+    };
+    const expectedAttributes = identity.attributes && typeof identity.attributes === "object" ? identity.attributes : {};
+    const expectedClasses = Array.isArray(identity.classList) ? identity.classList.filter(isStableClassName) : [];
+    const expectedText = normalizeIdentityText(identity.text || identity.labelText || identity.accessibleName || "");
+
+    return nodes.map((node, index) => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      const visible = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      const tagName = node.nodeName.toLowerCase();
+      let score = visible ? 6 : 0;
+      if (identity.tagName && tagName === cleanTagName(identity.tagName)) score += 10;
+
+      for (const [name, expectedValue] of Object.entries(expectedAttributes)) {
+        const actualValue = node.getAttribute(name);
+        if (!expectedValue || !actualValue) continue;
+        if (name === "id" && looksGeneratedToken(expectedValue)) continue;
+        if (actualValue === expectedValue) {
+          score += weights[name] ?? (name.startsWith("data-") ? 24 : 8);
+        } else if (name === "href" && actualValue.includes(expectedValue)) {
+          score += 6;
+        }
+      }
+
+      const classMatches = expectedClasses.filter((className) => node.classList.contains(className)).length;
+      score += Math.min(classMatches * 3, 12);
+
+      const actualText = normalizeIdentityText([
+        node.getAttribute("aria-label"),
+        node.getAttribute("placeholder"),
+        node.getAttribute("title"),
+        node.textContent
+      ].filter(Boolean).join(" "));
+      if (expectedText && actualText) {
+        if (actualText === expectedText) score += 20;
+        else if (actualText.includes(expectedText) || expectedText.includes(actualText)) score += 10;
+      }
+
+      return {
+        index,
+        score,
+        visible,
+        tagName
+      };
+    });
+  }
+
+  function cleanTagName(value) {
+    return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase();
+  }
+
+  function identityHasTextSignal(identity) {
+    return Boolean(normalizeIdentityText(identity.text || identity.labelText || identity.accessibleName || ""));
+  }
+
+  function normalizeIdentityText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
   }
 
   function targetSatisfiesState(resolved, state) {
@@ -624,7 +830,17 @@
 
   function looksGeneratedToken(value) {
     const text = String(value || "");
-    return text.length > 28 || /[a-f0-9]{10,}/i.test(text) || /__[a-zA-Z0-9_-]{6,}/.test(text);
+    return text.length > 28
+      || /[a-f0-9]{10,}/i.test(text)
+      || /__[a-zA-Z0-9_-]{6,}/.test(text);
+  }
+
+  function looksGeneratedClassName(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    if (/^(?:css|jss|sc|jsx|emotion|_ngcontent|ng)-?[a-zA-Z0-9_-]{4,}$/i.test(text)) return true;
+    if (/^[a-zA-Z0-9]{7,14}$/.test(text) && /[a-z]/.test(text) && /[A-Z]/.test(text) && /\d/.test(text)) return true;
+    return false;
   }
 
   function stableAttributeBonus(attributes) {

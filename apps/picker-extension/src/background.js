@@ -36,12 +36,18 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!changeInfo.url && changeInfo.status !== "complete") return;
-  if (changeInfo.url && activePick?.tabId === tabId) activePick = null;
+  if (changeInfo.url && activePick?.tabId === tabId) {
+    activePick = null;
+    clearCurrentPickerSession("navigation").then(() => refreshAllTabsSidePanels()).catch(() => {});
+  }
   updateSidePanelForTab({ ...tab, id: tabId }, { forceSessionRefresh: Boolean(changeInfo.url) }).catch(() => {});
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (activePick?.tabId === tabId) activePick = null;
+  if (activePick?.tabId === tabId) {
+    activePick = null;
+    clearCurrentPickerSession("tab_closed").then(() => refreshAllTabsSidePanels()).catch(() => {});
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -111,7 +117,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === "STOP_PICK") {
-      sendResponse(await stopActivePick(message.reason || "sidepanel"));
+      sendResponse(await cancelActivePick(message.reason || "sidepanel"));
       return;
     }
 
@@ -135,7 +141,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === "PICKER_CANCELLED") {
       if (!sender?.tab?.id || activePick?.tabId === sender.tab.id) activePick = null;
-      sendResponse({ ok: true });
+      const sessionCleared = await clearCurrentPickerSession(message.reason || "cancelled");
+      await refreshAllTabsSidePanels();
+      sendResponse({ ok: true, sessionCleared });
       return;
     }
 
@@ -288,6 +296,13 @@ async function stopActivePick(reason = "sidepanel") {
   }
 }
 
+async function cancelActivePick(reason = "sidepanel") {
+  const result = await stopActivePick(reason);
+  const sessionCleared = await clearCurrentPickerSession(reason);
+  await refreshAllTabsSidePanels();
+  return { ...result, sessionCleared };
+}
+
 async function stopPickInAllTabs(reason = "sidepanel") {
   const tabs = await chrome.tabs.query({}).catch(() => []);
   const results = await Promise.all(tabs.filter((tab) => isHttpUrl(tab.url)).map((tab) => (
@@ -411,6 +426,13 @@ async function clearStudioPickerSession(sessionId, reason) {
     cachedPickerSession = null;
     sessionCacheAt = 0;
   }
+}
+
+async function clearCurrentPickerSession(reason) {
+  const session = await fetchPickerSession({ force: true });
+  if (!session?.id) return false;
+  await clearStudioPickerSession(session.id, reason);
+  return true;
 }
 
 async function postPickerEvent(event) {

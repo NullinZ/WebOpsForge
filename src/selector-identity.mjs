@@ -32,6 +32,26 @@ const ATTRIBUTE_ALLOWLIST = new Set([
   "data-cy"
 ]);
 
+const TRANSIENT_CLASS_NAMES = new Set([
+  "active",
+  "checked",
+  "current",
+  "disabled",
+  "focus",
+  "focused",
+  "hidden",
+  "hover",
+  "is-active",
+  "is-checked",
+  "is-current",
+  "is-disabled",
+  "is-hidden",
+  "is-open",
+  "open",
+  "selected",
+  "show"
+]);
+
 export function normalizePickerEvent(raw, { clock = () => new Date() } = {}) {
   if (!raw || typeof raw !== "object") {
     const error = new Error("Picker event must be an object");
@@ -42,10 +62,13 @@ export function normalizePickerEvent(raw, { clock = () => new Date() } = {}) {
   const now = clock().toISOString();
   const target = raw.target && typeof raw.target === "object" ? raw.target : {};
   const candidates = normalizeSelectorCandidates(raw.selectorCandidates ?? raw.candidates ?? []);
-  const recommendedSelector = firstString(raw.recommendedSelector, raw.selector, candidates[0]?.selector);
+  const rawRecommendedSelector = firstString(raw.recommendedSelector, raw.selector);
+  const recommendedSelector = looksUnstableSelector(rawRecommendedSelector)
+    ? firstString(candidates[0]?.selector, rawRecommendedSelector)
+    : firstString(rawRecommendedSelector, candidates[0]?.selector);
   const attributes = normalizeAttributes(target.attributes ?? raw.attributes ?? {});
   const tagName = cleanToken(target.tagName ?? target.tag ?? raw.tagName).toLowerCase();
-  const classList = normalizeStringArray(target.classList ?? raw.classList).slice(0, 12);
+  const classList = normalizeStringArray(target.classList ?? raw.classList).filter(isStableClassName).slice(0, 12);
   const text = cleanText(target.text ?? raw.text, 160);
   const labelText = cleanText(target.labelText ?? raw.labelText, 160);
   const accessibleName = cleanText(target.accessibleName ?? raw.accessibleName, 160);
@@ -113,6 +136,7 @@ function normalizeSelectorCandidates(candidates) {
     .map((candidate) => {
       const selector = firstString(candidate.selector);
       if (!selector || seen.has(selector)) return null;
+      if (looksUnstableSelector(selector, firstString(candidate.source))) return null;
       seen.add(selector);
       const matchCount = finiteNumber(candidate.matchCount, null);
       const visibleCount = finiteNumber(candidate.visibleCount, null);
@@ -140,6 +164,7 @@ function normalizeAttributes(attributes) {
     if (!ATTRIBUTE_ALLOWLIST.has(name) && !name.startsWith("data-")) continue;
     const text = firstString(value);
     if (!text || text.length > 240) continue;
+    if (name === "id" && looksGeneratedToken(text)) continue;
     output[name] = text;
   }
   return output;
@@ -181,6 +206,57 @@ function normalizeStringArray(value) {
   return (Array.isArray(value) ? value : [])
     .map((item) => firstString(item))
     .filter(Boolean);
+}
+
+function looksUnstableSelector(selector, source = "") {
+  const text = firstString(selector);
+  if (!text || selectorHasStableAttribute(text)) return false;
+  const classes = extractSelectorClassNames(text);
+  if (classes.length) {
+    if (source === "class" && classes.every(looksGeneratedClassName)) return true;
+    if (classes.some(looksGeneratedClassName) && !classes.some(isStableClassName)) return true;
+  }
+  const ids = extractSelectorIds(text);
+  return ids.length > 0 && ids.every(looksGeneratedToken);
+}
+
+function selectorHasStableAttribute(selector) {
+  return /\[(?:data-e2e|data-testid|data-test|data-cy|aria-label|placeholder|name|role|type|title)=/i.test(selector);
+}
+
+function extractSelectorClassNames(selector) {
+  return Array.from(String(selector || "").matchAll(/\.([a-zA-Z0-9_-]+)/g))
+    .map((match) => match[1])
+    .filter(Boolean);
+}
+
+function extractSelectorIds(selector) {
+  return Array.from(String(selector || "").matchAll(/#([a-zA-Z0-9_-]+)/g))
+    .map((match) => match[1])
+    .filter(Boolean);
+}
+
+function isStableClassName(className) {
+  const text = firstString(className);
+  return /^[a-zA-Z0-9_-]+$/.test(text)
+    && !TRANSIENT_CLASS_NAMES.has(text)
+    && !looksGeneratedToken(text)
+    && !looksGeneratedClassName(text);
+}
+
+function looksGeneratedToken(value) {
+  const text = firstString(value);
+  return text.length > 28
+    || /[a-f0-9]{10,}/i.test(text)
+    || /__[a-zA-Z0-9_-]{6,}/.test(text);
+}
+
+function looksGeneratedClassName(value) {
+  const text = firstString(value);
+  if (!text) return false;
+  if (/^(?:css|jss|sc|jsx|emotion|_ngcontent|ng)-?[a-zA-Z0-9_-]{4,}$/i.test(text)) return true;
+  if (/^[a-zA-Z0-9]{7,14}$/.test(text) && /[a-z]/.test(text) && /[A-Z]/.test(text) && /\d/.test(text)) return true;
+  return false;
 }
 
 function cleanToken(value) {

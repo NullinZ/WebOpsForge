@@ -13,7 +13,7 @@ The picker is intentionally not a simple "copy selector" tool. It captures an el
 4. Studio creates a short-lived picker session with the inferred target URL from the nearest `goto`.
 5. Open or switch to the page you want to pick from. The inferred URL is a reference, not an enforced match.
 6. Open the `WebOps Forge Picker` extension side panel and choose the target type.
-7. Click the target element in the page. To cancel an active pick, click `停止拾取` in the side panel or press `ESC`.
+7. Click the target element in the page. To cancel an active pick, click `停止拾取` in the side panel or press `ESC`; cancellation clears the active Studio picker session as well as the extension's local active-pick state.
 8. The extension posts the pick to `POST /api/picker/events`.
 9. Studio automatically applies the new pick to the pending picker node, clears the picker session, and collapses the picker panel. You can also refresh picks and apply one manually in the node editor.
 
@@ -47,7 +47,7 @@ The bundled Chrome picker in `apps/picker-extension` ranks selectors in this ord
 1. stable `data-*` attributes: `data-e2e`, `data-testid`, `data-test`, `data-cy`.
 2. accessibility and form attributes: `aria-label`, `placeholder`, `name`, `role`, `type`.
 3. stable id, when it does not look generated.
-4. tag and stable class combinations.
+4. tag and stable class combinations. Short generated CSS-module/hash classes such as `div.YDoaql1z`, transient state classes, and generated ids are filtered out instead of being treated as stable selectors.
 5. unique DOM path as the last fallback.
 
 ## Picker Session Scope
@@ -93,3 +93,4 @@ Applied picks add fields like:
 ```
 
 The stable selector remains readable, while `targetIdentity` gives the runner enough evidence to reject unsafe matches.
+Front Chrome extension execution also scores selector matches against `targetIdentity`, so a stale selector candidate is not executed unless the element fingerprint still matches safely.
