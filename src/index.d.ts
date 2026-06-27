@@ -145,6 +145,8 @@ export type BlockedState =
   | "browser_blocked"
   | "captcha_or_verification"
   | "empty_result"
+  | "front_chrome_javascript_disabled"
+  | "front_chrome_uncontrolled"
   | "login_required"
   | "navigation_timeout"
   | "permission_denied"
@@ -249,7 +251,14 @@ export function createChromeProfileHandoffDriver(options?: {
   browserChannel?: string | null;
   profileDirectory?: string | null;
   opener?: (command: string, args: string[], options?: Record<string, unknown>) => Promise<unknown>;
+  executor?: { run(payload: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<Record<string, unknown>> } | null;
+  nativeExecutor?: { run(payload: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<Record<string, unknown>> } | null;
 }): BrowserDriver & { kind: "chrome-profile-handoff" };
+
+export function createMacChromeAppleScriptExecutor(options?: {
+  browserChannel?: string | null;
+  osascript?: (script: string, options?: { timeoutMs?: number }) => Promise<string>;
+}): { kind: "mac-chrome-applescript"; run(payload?: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<Record<string, unknown>> } | null;
 
 export interface WebOpsAdapter {
   id: string;
@@ -508,7 +517,8 @@ export class StudioStore {
   deleteProfile(id: string): Promise<{ deleted: boolean }>;
   leaseProfile(profileId: string | null, runId: string): Promise<StudioProfileRecord | null>;
   releaseProfile(profileId: string | null, runId: string, status?: string): Promise<StudioProfileRecord | null>;
-  listRuns(options?: { limit?: number }): Promise<StudioRunRecord[]>;
+  listRuns(options?: { limit?: number; offset?: number }): Promise<{ runs: StudioRunRecord[]; total: number; offset: number; limit: number; hasMore: boolean; nextOffset: number | null }>;
+  clearDebugRuns(): Promise<{ cleared: number; retained: number }>;
   savePickerEvent(event: Record<string, unknown>): Promise<PickerEvent>;
   listPickerEvents(options?: { limit?: number }): Promise<PickerEvent[]>;
   getPickerSession(): Promise<PickerSession | null>;
@@ -530,11 +540,43 @@ export class StudioStore {
   reset(): Promise<void>;
 }
 
-export function createRunQueue(options: { store: StudioStore; concurrency?: number; clock?: () => Date; chromeHandoffOpener?: (command: string, args: string[], options?: Record<string, unknown>) => Promise<unknown> }): {
+export function createRunQueue(options: { store: StudioStore; concurrency?: number; clock?: () => Date; chromeHandoffOpener?: (command: string, args: string[], options?: Record<string, unknown>) => Promise<unknown>; chromeExtensionExecutor?: { run(payload: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<Record<string, unknown>>; status?: () => Record<string, unknown> } | null; chromeNativeExecutor?: { run(payload: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<Record<string, unknown>> } | null; profileBrowserSessions?: ProfileBrowserSessionPool | null }): {
   enqueue(runId: string): void;
   cancel(runId: string, reason?: string): Promise<{ run: StudioRunRecord; changed: boolean }>;
   status(): { pending: number; active: number; concurrency: number; activeRunIds: string[]; pendingRunIds: string[] };
 };
+
+export interface ProfileBrowserSessionPool {
+  status(): { active: number; sessions: Record<string, unknown>[] };
+  open(options: { profile: StudioProfileRecord; overrides?: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  getDriver(options: { profile: StudioProfileRecord; run?: StudioRunRecord; overrides?: Record<string, unknown> }): Promise<BrowserDriver | null>;
+  close(profileOrId?: string | null): Promise<{ closed: number }>;
+}
+
+export function createProfileBrowserSessionPool(options?: { clock?: () => Date }): ProfileBrowserSessionPool;
+
+export function createExtensionExecutor(options?: { clock?: () => Date; maxCompletedMs?: number }): {
+  status(): { pending: number; active: number; lastSeenAt: string | null; lastSeenBy: Record<string, string> | null };
+  run(payload?: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<Record<string, unknown>>;
+  claimNext(meta?: Record<string, unknown>): Record<string, unknown> | null;
+  complete(id: string, body?: { ok?: boolean; result?: Record<string, unknown>; error?: Record<string, unknown> }): { accepted: boolean; status?: string; reason?: string };
+};
+
+export function openProfileLoginWindow(options: {
+  profile: StudioProfileRecord;
+  overrides?: Record<string, unknown>;
+  opener?: (command: string, args: string[]) => Promise<unknown>;
+  profileBrowserSessions?: ProfileBrowserSessionPool | null;
+  clock?: () => Date;
+}): Promise<{
+  opened: boolean;
+  mode: string;
+  browserChannel: string;
+  profileDir: string;
+  profileDirectory: string;
+  url: string;
+  openedAt: string;
+}>;
 
 export function probeProfileSession(options: {
   profile: StudioProfileRecord;

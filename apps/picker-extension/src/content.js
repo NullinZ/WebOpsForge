@@ -49,6 +49,12 @@
       sendResponse({ ok: true, stopped });
       return false;
     }
+    if (message.type === "WEBOPS_EXECUTE") {
+      executeWebOpsJob(message.job)
+        .then((result) => sendResponse({ ok: true, result }))
+        .catch((error) => sendResponse({ ok: false, error: serializeExecutorError(error) }));
+      return true;
+    }
     return false;
   });
 
@@ -58,6 +64,7 @@
     picker.field = field;
     picker.actionHint = actionHint;
     createOverlay(field);
+    window.addEventListener("keydown", handlePickKeydown, true);
     document.addEventListener("click", handlePickClick, true);
     document.addEventListener("keydown", handlePickKeydown, true);
   }
@@ -68,6 +75,7 @@
     picker.field = "";
     picker.actionHint = "";
     removeOverlay();
+    window.removeEventListener("keydown", handlePickKeydown, true);
     document.removeEventListener("click", handlePickClick, true);
     document.removeEventListener("keydown", handlePickKeydown, true);
     if (wasActive && notify) {
@@ -326,6 +334,292 @@
 
   function cleanPickerText(value) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
+  }
+
+  async function executeWebOpsJob(job) {
+    const params = job?.params || {};
+    const timeoutMs = Number(params.timeoutMs || 10_000);
+    switch (job?.action) {
+      case "waitFor":
+        return waitForWebOpsTarget(params, timeoutMs);
+      case "click":
+        return clickWebOpsTarget(params, timeoutMs);
+      case "fill":
+        return fillWebOpsTarget(params, timeoutMs);
+      case "press":
+        return pressWebOpsTarget(params, timeoutMs);
+      case "extract":
+        return extractWebOpsTarget(params, timeoutMs);
+      case "extractList":
+        return extractListWebOpsTarget(params, timeoutMs);
+      case "extractDetail":
+        return extractDetailWebOpsTarget(params, timeoutMs);
+      case "extractMedia":
+        return extractMediaWebOpsTarget(params, timeoutMs);
+      default:
+        throw executorError(`Unsupported extension executor action: ${job?.action || ""}`, {
+          reason: "unsupported_extension_executor_action",
+          action: job?.action || ""
+        });
+    }
+  }
+
+  async function waitForWebOpsTarget(params, timeoutMs) {
+    const state = params.state || "visible";
+    const resolved = await waitForResolvedTarget(params, state, timeoutMs);
+    return {
+      selector: resolved.selector,
+      state,
+      matched: Boolean(resolved.element),
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function clickWebOpsTarget(params, timeoutMs) {
+    const resolved = await waitForResolvedTarget(params, "visible", timeoutMs);
+    resolved.element.scrollIntoView({ block: "center", inline: "center" });
+    resolved.element.click();
+    return {
+      selector: resolved.selector,
+      clicked: true,
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function fillWebOpsTarget(params, timeoutMs) {
+    const resolved = await waitForResolvedTarget(params, "visible", timeoutMs);
+    const value = String(params.value ?? "");
+    resolved.element.scrollIntoView({ block: "center", inline: "center" });
+    resolved.element.focus();
+    setNativeValue(resolved.element, value);
+    resolved.element.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: value
+    }));
+    resolved.element.dispatchEvent(new Event("change", { bubbles: true }));
+    return {
+      selector: resolved.selector,
+      value: params.redact ? "[redacted]" : value,
+      actualValue: params.redact ? "[redacted]" : currentElementValue(resolved.element),
+      filled: true,
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function pressWebOpsTarget(params, timeoutMs) {
+    const key = String(params.key || "");
+    const resolved = params.selector
+      ? await waitForResolvedTarget(params, "visible", timeoutMs)
+      : { element: document.activeElement, selector: "", target: null };
+    if (!resolved.element) {
+      throw executorError("No active element for key press", { reason: "selector_not_found", key });
+    }
+    resolved.element.focus?.();
+    for (const type of ["keydown", "keypress", "keyup"]) {
+      resolved.element.dispatchEvent(new KeyboardEvent(type, {
+        key,
+        code: key,
+        bubbles: true,
+        cancelable: true
+      }));
+    }
+    return {
+      selector: resolved.selector,
+      key,
+      pressed: true,
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function extractWebOpsTarget(params, timeoutMs) {
+    const resolved = await waitForResolvedTarget(params, "visible", timeoutMs);
+    return {
+      selector: resolved.selector,
+      mode: params.mode || "text",
+      value: extractValue(resolved.element, params),
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function extractListWebOpsTarget(params, timeoutMs) {
+    const resolved = await waitForResolvedTarget(params, "attached", timeoutMs);
+    const nodes = Array.from(document.querySelectorAll(resolved.selector));
+    const limit = Number(params.limit || nodes.length);
+    const fields = params.fields || {};
+    const rows = nodes.slice(0, limit).map((node) => {
+      if (!fields || Object.keys(fields).length === 0) return cleanPickerText(node.textContent || "");
+      const row = {};
+      for (const [name, spec] of Object.entries(fields)) {
+        const fieldSpec = typeof spec === "string" ? { selector: spec, mode: "text" } : spec || {};
+        const target = fieldSpec.selector ? node.querySelector(fieldSpec.selector) : node;
+        row[name] = target ? extractValue(target, fieldSpec) : null;
+      }
+      return row;
+    });
+    return {
+      selector: resolved.selector,
+      value: rows,
+      count: rows.length,
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function extractDetailWebOpsTarget(params, timeoutMs) {
+    const fields = params.fields || {};
+    const value = {};
+    for (const [name, spec] of Object.entries(fields)) {
+      const fieldSpec = typeof spec === "string" ? { selector: spec, mode: "text" } : spec || {};
+      const resolved = await waitForResolvedTarget(fieldSpec, fieldSpec.required === false ? "attached_or_missing" : "attached", timeoutMs);
+      value[name] = resolved.element ? extractValue(resolved.element, fieldSpec) : null;
+    }
+    return { value, url: location.href };
+  }
+
+  async function extractMediaWebOpsTarget(params, timeoutMs) {
+    const resolved = await waitForResolvedTarget(params, "attached", timeoutMs);
+    const nodes = Array.from(document.querySelectorAll(resolved.selector));
+    const limit = Number(params.limit || nodes.length);
+    const rows = nodes.slice(0, limit).map((node) => ({
+      src: node.currentSrc || node.src || node.getAttribute("src") || node.getAttribute("href") || "",
+      alt: node.getAttribute("alt") || "",
+      title: node.getAttribute("title") || ""
+    }));
+    return {
+      selector: resolved.selector,
+      value: rows,
+      count: rows.length,
+      target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function waitForResolvedTarget(params, state, timeoutMs) {
+    const deadline = Date.now() + Math.max(500, timeoutMs || 10_000);
+    let last = null;
+    while (Date.now() <= deadline) {
+      last = resolveWebOpsTarget(params);
+      if (state === "attached_or_missing") return last;
+      if (targetSatisfiesState(last, state)) return last;
+      await sleep(120);
+    }
+    throw executorError(`Selector not found: ${params.selector || ""}`, {
+      reason: "selector_not_found",
+      selector: params.selector || "",
+      attempts: last?.attempts || []
+    });
+  }
+
+  function resolveWebOpsTarget(params) {
+    const selectors = candidateSelectors(params);
+    const attempts = [];
+    for (const selector of selectors) {
+      let nodes = [];
+      try {
+        nodes = Array.from(document.querySelectorAll(selector));
+      } catch (_) {
+        attempts.push({ selector, status: "invalid_selector", matchCount: 0, visibleCount: 0 });
+        continue;
+      }
+      const visibleNodes = nodes.filter((node) => isVisibleElement(node));
+      attempts.push({
+        selector,
+        status: nodes.length ? "matched" : "not_found",
+        matchCount: nodes.length,
+        visibleCount: visibleNodes.length
+      });
+      const element = visibleNodes[0] || nodes[0] || null;
+      if (element) {
+        return {
+          element,
+          selector,
+          attempts,
+          target: {
+            selector,
+            requestedSelector: params.selector || "",
+            count: nodes.length,
+            visibleCount: visibleNodes.length
+          }
+        };
+      }
+    }
+    return {
+      element: null,
+      selector: params.selector || selectors[0] || "",
+      attempts,
+      target: {
+        selector: params.selector || selectors[0] || "",
+        requestedSelector: params.selector || "",
+        count: 0,
+        visibleCount: 0
+      }
+    };
+  }
+
+  function candidateSelectors(params) {
+    const selectors = [];
+    if (params.selector) selectors.push(params.selector);
+    for (const candidate of params.selectorCandidates || params.targetIdentity?.selectorCandidates || []) {
+      if (candidate?.selector) selectors.push(candidate.selector);
+    }
+    if (params.targetIdentity?.recommendedSelector) selectors.push(params.targetIdentity.recommendedSelector);
+    return Array.from(new Set(selectors.filter(Boolean)));
+  }
+
+  function targetSatisfiesState(resolved, state) {
+    if (state === "detached") return !resolved.element;
+    if (state === "hidden") return !resolved.element || !isVisibleElement(resolved.element);
+    if (state === "attached") return Boolean(resolved.element);
+    return Boolean(resolved.element && isVisibleElement(resolved.element));
+  }
+
+  function setNativeValue(element, value) {
+    const prototype = Object.getPrototypeOf(element);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+    if (descriptor?.set) {
+      descriptor.set.call(element, value);
+      return;
+    }
+    element.value = value;
+  }
+
+  function currentElementValue(element) {
+    if ("value" in element) return element.value;
+    return element.textContent || "";
+  }
+
+  function extractValue(element, params) {
+    const mode = params.mode || "text";
+    if (mode === "html") return element.innerHTML;
+    if (mode === "value") return currentElementValue(element);
+    if (mode === "attribute") return element.getAttribute(params.attribute || params.attr || "") || "";
+    return cleanPickerText(element.textContent || currentElementValue(element));
+  }
+
+  function executorError(message, details = {}) {
+    const error = new Error(message);
+    error.code = "BROWSER_ACTION_ERROR";
+    error.details = details;
+    return error;
+  }
+
+  function serializeExecutorError(error) {
+    return {
+      message: error?.message || String(error),
+      code: error?.code || "BROWSER_ACTION_ERROR",
+      reason: error?.details?.reason || error?.reason || "front_chrome_executor_action_failed",
+      details: error?.details || {}
+    };
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   function looksGeneratedToken(value) {

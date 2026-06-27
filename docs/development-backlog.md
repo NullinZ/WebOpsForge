@@ -90,11 +90,11 @@ This backlog tracks productization items that should not be left as code-only TO
 ### WOF-P1-011 Front Chrome Executor
 
 - Priority: P1
-- Status: open
+- Status: closed
 - Area: Chrome/CDP, extension executor, runner
 - Summary: Execute `fill`, `click`, `waitFor`, and extraction steps in an already-open ordinary Chrome profile after front-window URL handoff.
 - Acceptance: Runs against a busy real Chrome profile preserve the existing login/plugin session, open the target URL, then continue browser actions through CDP or the extension executor without falling back to Playwright profile takeover.
-- Evidence: 2026-06-27 live `workflow-mqme1i81` run `run_e6f4181de8f8460aa4` opened `https://douyin.com/` through handoff, then correctly stopped at `fill` with `chrome_profile_handoff_unsupported_action`.
+- Evidence: 2026-06-27 live `workflow-mqme1i81` run `run_e6f4181de8f8460aa4` opened `https://douyin.com/` through handoff, then correctly stopped at `fill` with `chrome_profile_handoff_unsupported_action`. Closed after adding the Studio extension-executor job API, picker-extension polling executor, handoff-driver executor dispatch, and tests covering locked Chrome profile completion through the extension executor.
 
 ### WOF-P2-010 Public Demo, Docs, And Accessibility QA
 

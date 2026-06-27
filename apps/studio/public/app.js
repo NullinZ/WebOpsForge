@@ -9,6 +9,9 @@ const state = {
   selectedLocalProfileId: "",
   runProfileDraftId: "",
   runs: [],
+  runsHasMore: false,
+  runsNextOffset: null,
+  runsLoadingMore: false,
   audit: [],
   pickerEvents: [],
   pickerSession: null,
@@ -53,6 +56,10 @@ const GRAPH_CHILD_NODE_WIDTH = 210;
 const GRAPH_MIN_CONTENT_WIDTH = 780;
 const GRAPH_MIN_CONTENT_HEIGHT = 420;
 const GRAPH_CANVAS_MARGIN = 160;
+const RUNS_PAGE_SIZE = 4;
+const RUN_INPUT_TEMPLATE_PATTERN = /\{\{\s*input\.([a-zA-Z0-9_.-]+)\s*\}\}/g;
+
+let pendingRunInputPrompt = null;
 const BUILDER_DEFAULT_TARGET_URL = "https://example.local/catalog";
 const BUILDER_DEFAULT_ITEM_SELECTOR = ".product-card";
 const BUILDER_DEFAULT_MEDIA_SELECTOR = "img, video, source";
@@ -194,7 +201,7 @@ const RESIZABLE_LAYOUTS = [
       navigation: {
         selector: ":scope > .registry-navigation",
         variable: "--registry-navigation-size",
-        defaultSize: 300,
+        defaultSize: 240,
         minSize: 180,
         collapseAt: 110,
         label: "Registry List"
@@ -268,6 +275,8 @@ const I18N = {
     browserStartup: "Browser startup",
     cancel: "Cancel",
     checkSession: "Check Session",
+    clearDebugRuns: "Clear Debug",
+    clearDebugRunsConfirm: "Clear debug run logs only? Formal run logs will be kept.",
     createReadWorkflow: "Create Read Workflow",
     apply: "Apply",
     applyLatestPick: "Apply Latest",
@@ -278,7 +287,9 @@ const I18N = {
     dataDir: "data: {path}",
     defaultRun: "Default Run",
     delete: "Delete",
-    definition: "Definition",
+    debugRunKind: "debug",
+    debugRunsCleared: "Cleared {count} debug logs",
+    definition: "Workflow JSON Source",
     definitionJson: "Definition JSON",
     description: "Description",
     detailFieldsJson: "Detail Fields JSON",
@@ -288,7 +299,7 @@ const I18N = {
     export: "Export",
     exportReady: "Export ready",
     extract: "Extract",
-    graph: "Graph",
+    graph: "Visual Builder",
     id: "ID",
     import: "Import",
     importedBundle: "Imported {workflows} workflows, {profiles} profiles, and {registry} registry set",
@@ -319,7 +330,9 @@ const I18N = {
     localBrowserProfile: "Local Browser Profile",
     localBrowserProfiles: "Local Browser Profiles (select to import)",
     localProfileImported: "Local browser profile imported",
+    loginWindowOpened: "Login window opened",
     noLocalProfiles: "Click Refresh Local to discover browser profiles",
+    moreRuns: "Scroll to load more",
     new: "New",
     nodeEditor: "Node Editor",
     nodeEditorApi: "API branch",
@@ -334,10 +347,13 @@ const I18N = {
     noOutputs: "No outputs",
     noPicks: "No browser picks",
     noRegistryRecords: "No resources registered",
+    noStepLogs: "No step logs yet",
+    formalRunKind: "formal",
     noWorkflowSelected: "No workflow selected",
     nodeAdded: "Node added. Edit it to define the next step.",
     noProfile: "no profile",
     none: "none",
+    openLoginWindow: "Open Login Window",
     operationModes: "Operation Modes",
     operationBuilder: "Operation Builder",
     operationBuilderNote: "Create a readable page operation with list, detail, and media outputs.",
@@ -386,7 +402,10 @@ const I18N = {
     runActivityStarting: "Starting {profile}; waiting for the first step event.",
     runActivityIdle: "Select a run to inspect live activity.",
     runConfig: "Run Config",
+    runInputMustBeObject: "Input JSON must be an object to fill workflow variables.",
     runQueued: "Run queued",
+    runVariablesDescription: "Fill only the values this workflow references, then start the run.",
+    runVariablesTitle: "Run Variables",
     runWorkflow: "Run Workflow",
     runs: "Runs",
     save: "Save",
@@ -405,15 +424,17 @@ const I18N = {
     sites: "Sites",
     status: "Status",
     stepCount: "{count} steps",
+    stepLogs: "Call Log",
     tags: "Tags",
     targetUrl: "Target URL",
     urlPattern: "URL Pattern",
     validate: "Validate",
     valueTemplate: "Value Template",
-    workflow: "Workflow",
+    workflow: "Workflow JSON",
     workflowBuilt: "Workflow built from operation",
-    workflowGraph: "Workflow Graph",
-    workflowGraphNote: "Drag nodes to arrange the execution map.",
+    workflowGraph: "Visual Builder",
+    workflowGraphHelpTitle: "Visual Workflow Builder",
+    workflowGraphNote: "Edit nodes on the execution map; changes sync with Workflow JSON. Layout is saved as graph metadata.",
     readWorkflowCreated: "Read workflow created",
     workflowSaved: "Workflow saved",
     workflowValid: "Workflow valid: {count} steps",
@@ -439,6 +460,8 @@ const I18N = {
     browserStartup: "浏览器启动",
     cancel: "取消",
     checkSession: "检查会话",
+    clearDebugRuns: "清空调试",
+    clearDebugRunsConfirm: "只清空调试运行日志？正式运行日志会保留。",
     createReadWorkflow: "创建读取工作流",
     apply: "应用",
     applyLatestPick: "应用最新",
@@ -449,7 +472,9 @@ const I18N = {
     dataDir: "数据目录：{path}",
     defaultRun: "默认运行",
     delete: "删除",
-    definition: "定义",
+    debugRunKind: "调试",
+    debugRunsCleared: "已清空 {count} 条调试日志",
+    definition: "工作流 JSON 源码",
     definitionJson: "定义 JSON",
     description: "描述",
     detailFieldsJson: "详情字段 JSON",
@@ -459,7 +484,7 @@ const I18N = {
     export: "导出",
     exportReady: "导出已准备好",
     extract: "提取路径",
-    graph: "图谱",
+    graph: "可视编排",
     id: "ID",
     import: "导入",
     importedBundle: "已导入 {workflows} 个工作流、{profiles} 个 Profile 和 {registry} 套注册表",
@@ -490,7 +515,9 @@ const I18N = {
     localBrowserProfile: "本机浏览器 Profile",
     localBrowserProfiles: "本机浏览器 Profile（选择即导入）",
     localProfileImported: "已导入本机浏览器 Profile",
+    loginWindowOpened: "登录窗口已打开",
     noLocalProfiles: "点击“刷新本机”获取浏览器 Profile",
+    moreRuns: "滚动加载更多",
     new: "新建",
     nodeEditor: "节点编辑",
     nodeEditorApi: "API 分支",
@@ -505,10 +532,13 @@ const I18N = {
     noOutputs: "暂无输出",
     noPicks: "暂无浏览器拾取",
     noRegistryRecords: "暂无注册资源",
+    noStepLogs: "暂无调用日志",
+    formalRunKind: "正式",
     noWorkflowSelected: "未选择工作流",
     nodeAdded: "节点已新增，请编辑它来定义下一步。",
     noProfile: "不使用 Profile",
     none: "无",
+    openLoginWindow: "打开登录窗口",
     operationModes: "动作执行方式",
     operationBuilder: "操作生成器",
     operationBuilderNote: "创建可读取列表、详情和图片视频输出的页面操作。",
@@ -557,7 +587,10 @@ const I18N = {
     runActivityStarting: "正在启动 {profile}，等待第一个步骤事件。",
     runActivityIdle: "选择一条运行记录查看实时活动。",
     runConfig: "运行配置",
+    runInputMustBeObject: "输入 JSON 必须是对象，才能自动填写工作流变量。",
     runQueued: "运行已入队",
+    runVariablesDescription: "只填写当前工作流引用的变量，然后开始运行。",
+    runVariablesTitle: "运行变量",
     runWorkflow: "运行工作流",
     runs: "运行记录",
     save: "保存",
@@ -576,15 +609,17 @@ const I18N = {
     sites: "站点",
     status: "状态",
     stepCount: "{count} 步",
+    stepLogs: "调用日志",
     tags: "标签",
     targetUrl: "目标 URL",
     urlPattern: "URL 模式",
     validate: "校验",
     valueTemplate: "值模板",
-    workflow: "工作流",
+    workflow: "JSON 源码",
     workflowBuilt: "已从业务操作生成工作流",
-    workflowGraph: "工作流图谱",
-    workflowGraphNote: "拖动节点来整理执行流程。",
+    workflowGraph: "可视编排",
+    workflowGraphHelpTitle: "可视化工作流编排",
+    workflowGraphNote: "在图谱上编辑节点步骤；节点内容与 JSON 源码同步，拖拽布局另存为 graph 元数据。",
     readWorkflowCreated: "读取工作流已创建",
     workflowSaved: "工作流已保存",
     workflowValid: "工作流有效：{count} 步",
@@ -644,6 +679,8 @@ const BLOCKED_STATE_LABELS = {
     browser_blocked: "browser blocked",
     captcha_or_verification: "captcha or verification",
     empty_result: "empty result",
+    front_chrome_javascript_disabled: "Chrome Apple Events JavaScript disabled",
+    front_chrome_uncontrolled: "front Chrome not controllable",
     login_required: "login required",
     navigation_timeout: "navigation timeout",
     permission_denied: "permission denied",
@@ -657,6 +694,8 @@ const BLOCKED_STATE_LABELS = {
     browser_blocked: "浏览器阻塞",
     captcha_or_verification: "验证码或验证",
     empty_result: "结果为空",
+    front_chrome_javascript_disabled: "Chrome Apple 事件 JS 未开启",
+    front_chrome_uncontrolled: "前台 Chrome 不可控",
     login_required: "需要登录",
     navigation_timeout: "导航超时",
     permission_denied: "权限不足",
@@ -669,9 +708,13 @@ const BLOCKED_STATE_LABELS = {
 
 const RECOVERY_HINT_LABELS = {
   en: {
+    front_chrome_javascript_disabled: "In Chrome, enable View > Developer > Allow JavaScript from Apple Events, then rerun.",
+    front_chrome_uncontrolled: "Reload or enable the WebOps Forge Picker extension, enable Chrome Apple Events JavaScript, or switch to an isolated Playwright profile.",
     profile_busy: "This Chrome profile is already open outside WebOps Forge. Use CDP/extension control, or quit Chrome and let WebOps Forge launch this profile."
   },
   zh: {
+    front_chrome_javascript_disabled: "在 Chrome 菜单打开「查看 > 开发者 > 允许 Apple 事件中的 JavaScript」，然后重新运行。",
+    front_chrome_uncontrolled: "请刷新/启用 WebOps Forge Picker 扩展，或打开 Chrome 的「允许 Apple 事件中的 JavaScript」，也可以切换到 Local Chromium / 独立 Playwright Profile。",
     profile_busy: "这个 Profile 正被普通 Chrome 使用。要按此 Profile 自动执行，需要接入 CDP/扩展执行器；或先退出 Chrome，让 WebOps Forge 启动此 Profile。"
   }
 };
@@ -812,8 +855,8 @@ const FIELD_HELP = {
     en: { title: "Node JSON", body: "Complete configuration for the selected node. Use for advanced edits; the form fields sync with it." }
   },
   workflowJson: {
-    zh: { title: "工作流 JSON", body: "完整 workflow 定义。图谱、节点编辑器和运行配置最终都会保存到这里。" },
-    en: { title: "Workflow JSON", body: "Full workflow definition. The graph, node editor, and run config ultimately save into this structure." }
+    zh: { title: "工作流 JSON 源码", body: "完整 workflow 定义。可视编排里的节点和这里同步；拖拽布局另存为 graph 元数据，运行配置另存在 defaultRun。" },
+    en: { title: "Workflow JSON source", body: "Full workflow definition. Visual Builder nodes sync with this source; dragged layout is saved as graph metadata, and run config is saved under defaultRun." }
   },
   registryItemId: {
     zh: { title: "资源 ID", body: "注册中心资源的稳定 key。站点、页面、动作和业务操作都会用它互相关联。" },
@@ -1013,6 +1056,7 @@ const elements = {
   workflowList: document.querySelector("#workflowList"),
   profileList: document.querySelector("#profileList"),
   runList: document.querySelector("#runList"),
+  clearDebugRunsButton: document.querySelector("#clearDebugRunsButton"),
   workflowName: document.querySelector("#workflowName"),
   workflowId: document.querySelector("#workflowId"),
   workflowDescription: document.querySelector("#workflowDescription"),
@@ -1063,18 +1107,24 @@ const elements = {
   profileDir: document.querySelector("#profileDir"),
   profileDirectory: document.querySelector("#profileDirectory"),
   profileBrowserChannel: document.querySelector("#profileBrowserChannel"),
+  openProfileButton: document.querySelector("#openProfileButton"),
   localProfileSelect: document.querySelector("#localProfileSelect"),
   profileCheckUrl: document.querySelector("#profileCheckUrl"),
   profileAccountSelector: document.querySelector("#profileAccountSelector"),
   profileRate: document.querySelector("#profileRate"),
   selectedRunStatus: document.querySelector("#selectedRunStatus"),
   runActivity: document.querySelector("#runActivity"),
+  runStepLog: document.querySelector("#runStepLog"),
   runOutputPreview: document.querySelector("#runOutputPreview"),
   runSummary: document.querySelector("#runSummary"),
   eventTimeline: document.querySelector("#eventTimeline"),
   artifactList: document.querySelector("#artifactList"),
   auditList: document.querySelector("#auditList"),
   importFile: document.querySelector("#importFile"),
+  runInputModal: document.querySelector("#runInputModal"),
+  runInputFields: document.querySelector("#runInputFields"),
+  cancelRunInputButton: document.querySelector("#cancelRunInputButton"),
+  confirmRunInputButton: document.querySelector("#confirmRunInputButton"),
   toast: document.querySelector("#toast")
 };
 
@@ -1092,6 +1142,16 @@ document.querySelector("#exportButton").addEventListener("click", () => exportBu
 document.querySelector("#importButton").addEventListener("click", () => elements.importFile.click());
 document.querySelector("#importFile").addEventListener("change", (event) => importBundle(event.target.files[0]));
 document.querySelector("#runButton").addEventListener("click", () => runSelectedWorkflow());
+elements.clearDebugRunsButton.addEventListener("click", () => clearDebugRuns());
+elements.runList.addEventListener("scroll", () => handleRunListScroll());
+elements.cancelRunInputButton.addEventListener("click", () => resolveRunInputPrompt(null));
+elements.confirmRunInputButton.addEventListener("click", () => confirmRunInputPrompt());
+elements.runInputModal.addEventListener("click", (event) => {
+  if (event.target === elements.runInputModal) resolveRunInputPrompt(null);
+});
+elements.runInputModal.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") resolveRunInputPrompt(null);
+});
 document.querySelector("#saveWorkflowButton").addEventListener("click", () => saveSelectedWorkflow());
 document.querySelector("#validateWorkflowButton").addEventListener("click", () => validateSelectedWorkflow());
 document.querySelector("#newWorkflowButton").addEventListener("click", () => createBlankWorkflow());
@@ -1134,6 +1194,7 @@ document.addEventListener("click", (event) => {
 });
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
+elements.openProfileButton.addEventListener("click", () => openSelectedProfileLoginWindow());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
 document.querySelector("#saveRunConfigButton").addEventListener("click", () => saveSelectedWorkflow());
 elements.editRunProfileButton.addEventListener("click", () => editRunProfileFromRunConfig());
@@ -1244,9 +1305,36 @@ async function loadLocalBrowserProfiles() {
   state.localBrowserProfilesLoaded = true;
 }
 
-async function loadRuns() {
-  const data = await api("/api/runs?limit=30");
-  state.runs = data.runs;
+async function loadRuns({ reset = true } = {}) {
+  const loadedCount = state.runs.length || RUNS_PAGE_SIZE;
+  const limit = reset ? Math.max(RUNS_PAGE_SIZE, loadedCount) : RUNS_PAGE_SIZE;
+  const offset = reset ? 0 : (state.runsNextOffset ?? state.runs.length);
+  const data = await api(`/api/runs?limit=${limit}&offset=${offset}`);
+  state.runs = reset ? data.runs : mergeRuns(state.runs, data.runs);
+  state.runsHasMore = Boolean(data.hasMore);
+  state.runsNextOffset = data.nextOffset;
+}
+
+async function loadMoreRuns() {
+  if (state.runsLoadingMore || !state.runsHasMore) return;
+  state.runsLoadingMore = true;
+  try {
+    await loadRuns({ reset: false });
+    renderRuns();
+  } finally {
+    state.runsLoadingMore = false;
+  }
+}
+
+function mergeRuns(existing, incoming) {
+  const byId = new Map(existing.map((run) => [run.id, run]));
+  for (const run of incoming) byId.set(run.id, run);
+  return [...byId.values()].sort((a, b) => String(b.queuedAt).localeCompare(String(a.queuedAt)));
+}
+
+function handleRunListScroll() {
+  const remaining = elements.runList.scrollHeight - elements.runList.scrollTop - elements.runList.clientHeight;
+  if (remaining < 24) void loadMoreRuns();
 }
 
 async function loadAudit() {
@@ -1426,12 +1514,19 @@ function renderRuns() {
     button.type = "button";
     button.className = `run-row ${run.id === state.selectedRunId ? "active" : ""}`;
     const profile = run.profileName || run.profileId || t("noProfile");
+    const kind = run.debug ? t("debugRunKind") : t("formalRunKind");
     button.innerHTML = `
       <span class="row-title">${escapeHtml(run.workflowName)}</span>
-      <span class="row-meta">${escapeHtml(statusLabel(run.status))} · ${escapeHtml(run.mode)} · ${escapeHtml(profile)} · ${formatTime(run.queuedAt)}</span>
+      <span class="row-meta">${escapeHtml(kind)} · ${escapeHtml(statusLabel(run.status))} · ${escapeHtml(run.mode)} · ${escapeHtml(profile)} · ${formatTime(run.queuedAt)}</span>
     `;
-    button.addEventListener("click", () => selectRun(run.id));
+    button.addEventListener("click", () => selectRun(run.id, { focusLog: true }));
     elements.runList.append(button);
+  }
+  if (state.runsHasMore) {
+    const more = document.createElement("div");
+    more.className = "run-list-more";
+    more.textContent = state.runsLoadingMore ? "..." : t("moreRuns");
+    elements.runList.append(more);
   }
 }
 
@@ -2432,6 +2527,8 @@ function setupFieldHelps() {
       event.stopPropagation();
       toggleFieldHelp(button);
     });
+    button.addEventListener("mouseenter", () => positionFieldHelp(button));
+    button.addEventListener("focus", () => positionFieldHelp(button));
 
     const existingRow = label.parentElement?.classList.contains("field-label-row") ? label.parentElement : null;
     if (existingRow) {
@@ -2463,6 +2560,7 @@ function renderFieldHelps() {
 function toggleFieldHelp(button) {
   const active = button.classList.contains("active");
   closeFieldHelps();
+  positionFieldHelp(button);
   button.classList.toggle("active", !active);
 }
 
@@ -2471,6 +2569,22 @@ function closeFieldHelps(target = null) {
     if (target && button.contains(target)) return;
     button.classList.remove("active");
   });
+}
+
+function positionFieldHelp(button) {
+  const popover = button.querySelector(".field-help-popover");
+  if (!popover) return;
+  const rect = button.getBoundingClientRect();
+  const width = Math.min(280, Math.max(180, window.innerWidth - 32));
+  const estimatedHeight = 110;
+  let left = rect.left + rect.width / 2 - width + 32;
+  left = Math.max(16, Math.min(left, window.innerWidth - width - 16));
+  let top = rect.bottom + 8;
+  if (top + estimatedHeight > window.innerHeight - 16) top = Math.max(16, rect.top - estimatedHeight - 8);
+  const caretLeft = Math.max(12, Math.min(width - 20, rect.left + rect.width / 2 - left - 4));
+  popover.style.setProperty("--field-help-left", `${left}px`);
+  popover.style.setProperty("--field-help-top", `${top}px`);
+  popover.style.setProperty("--field-help-caret-left", `${caretLeft}px`);
 }
 
 function fieldHelpFor(fieldId) {
@@ -3397,13 +3511,21 @@ function selectProfile(id, { focusPanel = false } = {}) {
   if (focusPanel) selectTab("profile");
 }
 
-async function selectRun(id) {
+async function selectRun(id, { focusLog = false } = {}) {
   state.selectedRunId = id;
   const data = await api(`/api/runs/${encodeURIComponent(id)}`);
   state.selectedRunDetail = data;
   renderRunDetail(data);
   renderRuns();
   renderGraph();
+  if (focusLog) focusRunStepLog();
+}
+
+function focusRunStepLog() {
+  const panel = elements.runStepLog.closest(".call-log-section");
+  panel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  panel?.classList.add("focus-pulse");
+  setTimeout(() => panel?.classList.remove("focus-pulse"), 900);
 }
 
 function renderRunDetail({ run, events, artifacts }) {
@@ -3415,6 +3537,7 @@ function renderRunDetail({ run, events, artifacts }) {
     <strong>${escapeHtml(activity.title)}</strong>
     <span>${escapeHtml(activity.detail)}</span>
   `;
+  renderRunStepLog(run, events);
   renderOutputPreview(run.outputs ?? {});
   elements.runSummary.textContent = formatJson({
     id: run.id,
@@ -3455,6 +3578,76 @@ function renderRunDetail({ run, events, artifacts }) {
     `;
     elements.artifactList.append(row);
   }
+}
+
+function renderEmptyRunDetail() {
+  elements.selectedRunStatus.textContent = t("none");
+  elements.selectedRunStatus.className = "pill muted";
+  elements.runActivity.className = "run-activity muted";
+  elements.runActivity.innerHTML = `
+    <strong>${escapeHtml(statusLabel("idle"))}</strong>
+    <span>${escapeHtml(t("runActivityIdle"))}</span>
+  `;
+  elements.runStepLog.innerHTML = `<div class="event-meta">${escapeHtml(t("noStepLogs"))}</div>`;
+  renderOutputPreview({});
+  elements.runSummary.textContent = "";
+  elements.eventTimeline.innerHTML = "";
+  elements.artifactList.innerHTML = `<div class="event-meta">${escapeHtml(t("noArtifacts"))}</div>`;
+}
+
+function renderRunStepLog(run, events = []) {
+  const logEvents = runStepLogEvents(run, events);
+  if (!logEvents.length) {
+    elements.runStepLog.innerHTML = `<div class="event-meta">${escapeHtml(t("noStepLogs"))}</div>`;
+    return;
+  }
+
+  elements.runStepLog.innerHTML = logEvents.slice(-10).map((event) => `
+    <div class="step-log-row ${stepLogStatusClass(event)}">
+      <div class="step-log-head">
+        <strong>${escapeHtml(stepLogTitle(event))}</strong>
+        <span>${escapeHtml(formatTime(event.createdAt ?? event.completedAt ?? event.failedAt ?? event.startedAt))}</span>
+      </div>
+      <div class="step-log-meta">${escapeHtml(eventDetail(event, run))}</div>
+    </div>
+  `).join("");
+  elements.runStepLog.scrollTop = elements.runStepLog.scrollHeight;
+}
+
+function runStepLogEvents(run, events = []) {
+  const items = events.filter((event) => event.stepId);
+  if (run.error?.stepId && !items.some((event) => event.type === "step.failed" && event.stepId === run.error.stepId)) {
+    items.push({
+      type: "step.failed",
+      runId: run.id,
+      stepId: run.error.stepId,
+      action: findWorkflowStep(run.workflowId, run.error.stepId)?.action ?? null,
+      error: run.error,
+      createdAt: run.completedAt ?? run.updatedAt ?? run.startedAt
+    });
+  }
+  return items.sort((a, b) => String(a.createdAt ?? a.startedAt ?? "").localeCompare(String(b.createdAt ?? b.startedAt ?? "")));
+}
+
+function stepLogTitle(event) {
+  const stateLabel = event.type === "step.completed"
+    ? statusLabel("completed")
+    : event.type === "step.failed"
+      ? statusLabel("failed")
+      : event.type === "step.skipped_after_error"
+        ? "skipped"
+        : event.type === "step.delay"
+          ? "delay"
+          : statusLabel("running");
+  const action = event.action ? ` · ${actionLabel(event.action)}` : "";
+  return `${stateLabel} · ${event.stepId}${action}`;
+}
+
+function stepLogStatusClass(event) {
+  if (event.type === "step.completed") return "success";
+  if (event.type === "step.failed") return "danger";
+  if (event.type === "step.skipped_after_error") return "warning";
+  return "muted";
 }
 
 function renderOutputPreview(outputs = {}) {
@@ -3623,14 +3816,64 @@ function eventDetail(event, run = null) {
   if (event.action ?? step?.action) parts.push(actionLabel(event.action ?? step.action));
   const target = stepTarget(step);
   if (target) parts.push(target);
+  if (event.details?.value != null) parts.push(`${eventLabel("value")}: ${formatEventValue(event.details.value)}`);
+  if (Array.isArray(event.details?.templateValues)) {
+    for (const item of event.details.templateValues) {
+      parts.push(`${item.path} -> ${formatEventValue(item.value)}`);
+    }
+  }
   if (event.error?.message) parts.push(cleanErrorMessage(event.error.message));
+  if (event.error?.details?.selector) parts.push(`${eventLabel("selector")}: ${event.error.details.selector}`);
+  if (Array.isArray(event.error?.details?.attempts)) {
+    const lastAttempt = event.error.details.attempts.at(-1);
+    if (lastAttempt) {
+      parts.push(`${lastAttempt.selector}: ${lastAttempt.status}${lastAttempt.visibleCount == null ? "" : ` · ${eventLabel("matched")} ${lastAttempt.visibleCount}`}`);
+    }
+  }
   if (event.error?.details?.blockedState) parts.push(blockedStateLabel(event.error.details.blockedState));
   if (event.error?.details?.recoveryHint) {
     parts.push(recoveryHintLabel(event.error.details.blockedState, event.error.details.recoveryHint));
   }
+  if (event.result?.target) parts.push(formatTargetMatch(event.result.target));
+  if (event.result?.value != null) parts.push(`${eventLabel("setValue")}: ${formatEventValue(event.result.value)}`);
+  if (event.result?.actualValue != null) parts.push(`${eventLabel("actualValue")}: ${formatEventValue(event.result.actualValue)}`);
   if (event.result?.url) parts.push(event.result.url);
   if (event.workflow?.name) parts.push(event.workflow.name);
   return parts.join(" · ");
+}
+
+function formatTargetMatch(target) {
+  const selector = target.selector || target.requestedSelector || "";
+  const count = target.visibleCount ?? target.resolvedVisibleCount ?? target.count ?? target.resolvedCount;
+  const score = target.score == null ? "" : ` · score ${target.score}`;
+  const countText = count == null ? "" : ` · ${eventLabel("matched")} ${count}`;
+  return `${eventLabel("selector")}: ${selector}${countText}${score}`;
+}
+
+function eventLabel(key) {
+  const labels = {
+    en: {
+      actualValue: "page value",
+      matched: "matched",
+      selector: "selector",
+      setValue: "set",
+      value: "value"
+    },
+    zh: {
+      actualValue: "页面值",
+      matched: "命中",
+      selector: "选择器",
+      setValue: "设置",
+      value: "值"
+    }
+  };
+  return labels[state.language]?.[key] ?? labels.en[key] ?? key;
+}
+
+function formatEventValue(value) {
+  if (value == null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 function describeStep(event, step) {
@@ -3685,7 +3928,6 @@ function renderAudit() {
 function renderRegistry() {
   if (!state.registry) return;
   renderRegistryMetrics();
-  renderRegistrySectionTabs();
   renderRegistryItemList();
 
   const item = currentRegistryItem() ?? createBlankRegistryRecord(state.selectedRegistrySection);
@@ -3697,10 +3939,11 @@ function renderRegistry() {
 function renderRegistryMetrics() {
   elements.registryMetrics.innerHTML = REGISTRY_SECTIONS.map((section) => {
     const count = state.registry?.[section.id]?.length ?? 0;
+    const active = state.selectedRegistrySection === section.id;
     return `
-      <button class="registry-metric ${state.selectedRegistrySection === section.id ? "active" : ""}" type="button" data-section="${section.id}">
-        <span>${escapeHtml(t(section.labelKey))}</span>
-        <strong>${count}</strong>
+      <button class="registry-metric ${active ? "active" : ""}" type="button" data-section="${section.id}" aria-pressed="${active ? "true" : "false"}">
+        <span class="registry-metric-label">${escapeHtml(t(section.labelKey))}</span>
+        <span class="registry-metric-count">${count}</span>
       </button>
     `;
   }).join("");
@@ -4329,21 +4572,123 @@ async function checkSelectedProfile() {
   }
 }
 
+async function openSelectedProfileLoginWindow() {
+  try {
+    const id = elements.profileId.value.trim();
+    if (!id) throw new Error(t("profileIdRequired"));
+    const sessionCheck = profileSessionCheckFromForm();
+    await api(`/api/profiles/${encodeURIComponent(id)}/open-login`, {
+      method: "POST",
+      body: {
+        platform: elements.profilePlatform.value.trim(),
+        accountLabel: elements.profileAccountLabel.value.trim(),
+        profileDir: elements.profileDir.value.trim(),
+        profileDirectory: elements.profileDirectory.value.trim(),
+        browserChannel: elements.profileBrowserChannel.value.trim(),
+        ...sessionCheck
+      }
+    });
+    await loadAudit();
+    render();
+    showToast(t("loginWindowOpened"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function prepareRunInput(workflowDefinition) {
+  const input = parseJson(elements.runInputJson.value, "Input");
+  if (!isPlainObject(input)) throw new Error(t("runInputMustBeObject"));
+  const missingPaths = collectMissingInputTemplatePaths(workflowDefinition, input);
+  if (!missingPaths.length) return input;
+
+  const nextInput = await promptForRunInputVariables(missingPaths, input);
+  if (!nextInput) return null;
+  elements.runInputJson.value = formatJson(nextInput);
+  return nextInput;
+}
+
+function collectMissingInputTemplatePaths(workflowDefinition, input) {
+  const paths = new Set();
+  JSON.stringify(workflowDefinition ?? {}).replace(RUN_INPUT_TEMPLATE_PATTERN, (_match, path) => {
+    paths.add(path);
+    return "";
+  });
+  return [...paths].filter((path) => getObjectPath(input, path) == null).sort();
+}
+
+function promptForRunInputVariables(paths, input) {
+  if (pendingRunInputPrompt) resolveRunInputPrompt(null);
+  const draft = structuredCloneSafe(input ?? {});
+  return new Promise((resolve) => {
+    pendingRunInputPrompt = {
+      resolve,
+      paths,
+      input: draft,
+      previousFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null
+    };
+    renderRunInputPrompt(paths, draft);
+    elements.runInputModal.hidden = false;
+    elements.runInputModal.querySelector("input")?.focus();
+  });
+}
+
+function renderRunInputPrompt(paths, input) {
+  elements.runInputFields.innerHTML = paths.map((path) => {
+    const id = `run-input-${slugify(path)}`;
+    const existing = getObjectPath(input, path);
+    const value = existing == null ? "" : typeof existing === "string" ? existing : JSON.stringify(existing);
+    return `
+      <div class="run-input-field">
+        <label for="${escapeAttribute(id)}">
+          <span>${escapeHtml(t("input"))}</span>
+          <code>{{input.${escapeHtml(path)}}}</code>
+        </label>
+        <input id="${escapeAttribute(id)}" data-run-input-path="${escapeAttribute(path)}" value="${escapeAttribute(value)}" autocomplete="off" />
+      </div>
+    `;
+  }).join("");
+}
+
+function confirmRunInputPrompt() {
+  if (!pendingRunInputPrompt) return;
+  const nextInput = structuredCloneSafe(pendingRunInputPrompt.input ?? {});
+  elements.runInputFields.querySelectorAll("[data-run-input-path]").forEach((input) => {
+    setObjectPath(nextInput, input.dataset.runInputPath, input.value);
+  });
+  resolveRunInputPrompt(nextInput);
+}
+
+function resolveRunInputPrompt(value) {
+  if (!pendingRunInputPrompt) return;
+  const prompt = pendingRunInputPrompt;
+  pendingRunInputPrompt = null;
+  elements.runInputModal.hidden = true;
+  elements.runInputFields.innerHTML = "";
+  prompt.previousFocus?.focus?.();
+  prompt.resolve(value);
+}
+
 async function runSelectedWorkflow() {
   if (!state.selectedWorkflowId) return;
   try {
+    const workflowDefinition = parseJson(elements.workflowJson.value, "Workflow");
+    commitWorkflowDraft(workflowDefinition, { syncTextarea: false });
     const context = parseJson(elements.runContextJson.value, "Context");
     applyOperationModes(context);
     applyApprovalToggle(context);
     const profileId = await resolveSelectedProfileId();
+    const input = await prepareRunInput(workflowDefinition);
+    if (!input) return;
     const data = await api(`/api/workflows/${encodeURIComponent(state.selectedWorkflowId)}/runs`, {
       method: "POST",
       body: {
         mode: elements.runMode.value,
         profileId,
-        input: parseJson(elements.runInputJson.value, "Input"),
+        input,
         context,
-        driverConfig: parseJson(elements.driverConfigJson.value, "Driver")
+        driverConfig: parseJson(elements.driverConfigJson.value, "Driver"),
+        workflow: workflowDefinition
       }
     });
     await trackQueuedRun(data.run.id, t("runQueued"));
@@ -4361,12 +4706,14 @@ async function runWorkflowToNode(nodeId) {
     applyOperationModes(context);
     applyApprovalToggle(context);
     const profileId = await resolveSelectedProfileId();
+    const input = await prepareRunInput(workflowDefinition);
+    if (!input) return;
     const data = await api(`/api/workflows/${encodeURIComponent(state.selectedWorkflowId)}/runs`, {
       method: "POST",
       body: {
         mode: elements.runMode.value,
         profileId,
-        input: parseJson(elements.runInputJson.value, "Input"),
+        input,
         context,
         driverConfig: parseJson(elements.driverConfigJson.value, "Driver"),
         workflow: workflowDefinition,
@@ -4423,6 +4770,24 @@ async function cancelSelectedRun() {
     await refreshAll();
     await selectRun(state.selectedRunId);
     showToast(statusLabel("cancel_requested"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function clearDebugRuns() {
+  if (!window.confirm(t("clearDebugRunsConfirm"))) return;
+  try {
+    const data = await api("/api/runs/debug", { method: "DELETE" });
+    if (state.selectedRunDetail?.run?.debug) {
+      state.selectedRunId = null;
+      state.selectedRunDetail = null;
+      renderEmptyRunDetail();
+    }
+    await Promise.all([loadRuns({ reset: true }), loadAudit()]);
+    render();
+    if (!state.selectedRunId && state.runs[0]) await selectRun(state.runs[0].id);
+    showToast(t("debugRunsCleared", { count: data.cleared ?? 0 }));
   } catch (error) {
     showToast(error.message);
   }
@@ -4602,6 +4967,8 @@ function applyStaticTranslations() {
   });
   document.querySelector("#newWorkflowButton")?.setAttribute("aria-label", t("newWorkflow"));
   document.querySelector("#newProfileButton")?.setAttribute("aria-label", t("newProfile"));
+  document.querySelector("#graphHelpButton")?.setAttribute("aria-label", t("workflowGraphHelpTitle"));
+  document.querySelector("#graphHelpButton")?.setAttribute("title", t("workflowGraphHelpTitle"));
   elements.languageToggle.setAttribute("aria-label", t("language"));
   elements.languageToggle.setAttribute("aria-pressed", String(state.language === "zh"));
   elements.languageToggle.querySelectorAll("[data-lang-code]").forEach((node) => {
@@ -4803,6 +5170,31 @@ function parseJson(value, label) {
   } catch (error) {
     throw new Error(`${label} JSON is invalid: ${error.message}`);
   }
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function getObjectPath(source, path) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cursor = source;
+  for (const part of parts) {
+    if (!isPlainObject(cursor) || !(part in cursor)) return undefined;
+    cursor = cursor[part];
+  }
+  return cursor;
+}
+
+function setObjectPath(target, path, value) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  if (!parts.length) return;
+  let cursor = target;
+  for (const part of parts.slice(0, -1)) {
+    if (!isPlainObject(cursor[part])) cursor[part] = {};
+    cursor = cursor[part];
+  }
+  cursor[parts.at(-1)] = value;
 }
 
 function applyApprovalToggle(context) {

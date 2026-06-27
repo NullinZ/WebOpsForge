@@ -6,14 +6,16 @@ import { createRateLimiter } from "../rate-limit.mjs";
 import { createDryRunDriver } from "../drivers/dry-run-driver.mjs";
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
 import { createChromeProfileHandoffDriver } from "../drivers/chrome-profile-handoff-driver.mjs";
+import { createMacChromeAppleScriptExecutor } from "../drivers/mac-chrome-applescript-executor.mjs";
 import { classifyRunFailure } from "../blocked-state.mjs";
 
 const DEFAULT_HUMAN_TIMING = {
   minDelayMs: 800,
   maxDelayMs: 2200
 };
+const DEFAULT_BROWSER_CLOSE_DELAY_MS = 10_000;
 
-export function createRunQueue({ store, concurrency = 1, clock = () => new Date(), chromeHandoffOpener = null }) {
+export function createRunQueue({ store, concurrency = 1, clock = () => new Date(), chromeHandoffOpener = null, chromeExtensionExecutor = null, chromeNativeExecutor = undefined, profileBrowserSessions = null }) {
   const pending = [];
   const active = new Set();
   const controllers = new Map();
@@ -96,6 +98,9 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
       leasedProfile = await store.leaseProfile(run.profileId, runId);
       driver = await createDriver(run, leasedProfile, {
         chromeHandoffOpener,
+        chromeExtensionExecutor,
+        chromeNativeExecutor,
+        profileBrowserSessions,
         workflow: workflowRecord.workflow
       });
       const rateLimiter = createRunRateLimiter(run, leasedProfile);
@@ -105,6 +110,14 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
         context: run.context,
         runId,
         abortSignal: controllers.get(runId)?.signal ?? null
+      });
+      await delayBeforeBrowserClose({
+        run,
+        profile: leasedProfile,
+        driver,
+        evidenceStore,
+        runId,
+        clock
       });
       const completedAt = clock();
       await runner.close();
@@ -116,8 +129,16 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
         durationMs: completedAt.getTime() - startedAt.getTime()
       });
     } catch (error) {
-      const completedAt = clock();
       const classification = classifyRunFailure(error);
+      await delayBeforeBrowserClose({
+        run,
+        profile: leasedProfile,
+        driver,
+        evidenceStore,
+        runId,
+        clock
+      }).catch(() => {});
+      const completedAt = clock();
       await driver?.close?.().catch(() => {});
       await store.releaseProfile(run.profileId, runId, classification.profileStatus);
       await store.updateRun(runId, {
@@ -130,14 +151,20 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
   }
 }
 
-async function createDriver(run, profile = null, { chromeHandoffOpener = null, workflow = null } = {}) {
+async function createDriver(run, profile = null, { chromeHandoffOpener = null, chromeExtensionExecutor = null, chromeNativeExecutor = undefined, profileBrowserSessions = null, workflow = null } = {}) {
   const mergedConfig = mergeDriverConfig(run.driverConfig ?? {}, profile);
   if (run.mode === "playwright" || profile?.mode === "playwright") {
+    const sessionDriver = await profileBrowserSessions?.getDriver?.({ profile, run, overrides: run.driverConfig ?? {} });
+    if (sessionDriver) return sessionDriver;
     if (await shouldUseChromeProfileHandoff(run, profile, workflow)) {
       return createChromeProfileHandoffDriver({
         browserChannel: profile.browserChannel,
         profileDirectory: profile.profileDirectory,
-        opener: chromeHandoffOpener ?? undefined
+        opener: chromeHandoffOpener ?? undefined,
+        executor: chromeExtensionExecutor ?? null,
+        nativeExecutor: chromeNativeExecutor === undefined
+          ? createMacChromeAppleScriptExecutor({ browserChannel: profile.browserChannel })
+          : chromeNativeExecutor
       });
     }
     return createPlaywrightDriver(mergedConfig);
@@ -262,6 +289,31 @@ function createRunRateLimiter(run, profile = null) {
     maxDelayMs: timing.enabled ? timing.maxDelayMs : 0,
     maxPerMinute: timing.maxPerMinute
   });
+}
+
+async function delayBeforeBrowserClose({ run, profile = null, driver = null, evidenceStore = null, runId, clock }) {
+  const delayMs = resolveBrowserCloseDelayMs(run, profile, driver);
+  if (!delayMs) return;
+  await evidenceStore?.append?.({
+    type: "browser.close_delay",
+    runId,
+    delayMs,
+    startedAt: clock().toISOString()
+  });
+  await sleep(delayMs);
+}
+
+function resolveBrowserCloseDelayMs(run, profile = null, driver = null) {
+  if (driver?.kind !== "playwright") return 0;
+  if (driver?.persistentProfileSession) return 0;
+  if (profile?.headless || run.driverConfig?.headless) return 0;
+  const raw = run.driverConfig?.closeDelayMs ?? process.env.WEBOPS_FORGE_BROWSER_CLOSE_DELAY_MS;
+  if (raw === false || raw === "false") return 0;
+  return normalizeDelay(raw ?? DEFAULT_BROWSER_CLOSE_DELAY_MS, DEFAULT_BROWSER_CLOSE_DELAY_MS);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function resolveHumanTiming(run, profile = null) {

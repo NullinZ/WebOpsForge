@@ -17,11 +17,13 @@ export class StudioStore {
     this.pickerSessionFile = path.join(dir, "picker-session.json");
     this.auditFile = path.join(dir, "audit.jsonl");
     this.runsDir = path.join(dir, "runs");
+    this.browserProfilesDir = path.join(dir, "browser-profiles");
   }
 
   async init() {
     await mkdir(this.dir, { recursive: true });
     await mkdir(this.runsDir, { recursive: true });
+    await mkdir(this.browserProfilesDir, { recursive: true });
     await this.#ensureJsonFile(this.workflowsFile, []);
     await this.#ensureJsonFile(this.runsFile, []);
     await this.#ensureJsonFile(this.profilesFile, []);
@@ -38,7 +40,9 @@ export class StudioStore {
 
     const profiles = await this.listProfiles();
     if (profiles.length === 0) {
-      await this.#writeJson(this.profilesFile, createDefaultProfiles(this.clock));
+      await this.#writeJson(this.profilesFile, createDefaultProfiles(this.clock, {
+        browserProfilesDir: this.browserProfilesDir
+      }));
     }
 
     await this.#migrateSeedData();
@@ -234,11 +238,32 @@ export class StudioStore {
     return released;
   }
 
-  async listRuns({ limit = 50 } = {}) {
+  async listRuns({ limit = 50, offset = 0 } = {}) {
     const runs = await this.#readJson(this.runsFile, []);
-    return runs
-      .sort((a, b) => String(b.queuedAt).localeCompare(String(a.queuedAt)))
-      .slice(0, limit);
+    const sorted = runs.sort((a, b) => String(b.queuedAt).localeCompare(String(a.queuedAt)));
+    const start = Math.max(0, Number(offset) || 0);
+    const size = Math.max(1, Number(limit) || 50);
+    return {
+      runs: sorted.slice(start, start + size),
+      total: sorted.length,
+      offset: start,
+      limit: size,
+      hasMore: start + size < sorted.length,
+      nextOffset: start + size < sorted.length ? start + size : null
+    };
+  }
+
+  async clearDebugRuns() {
+    const runs = await this.#readJson(this.runsFile, []);
+    const debugRuns = runs.filter((run) => run.debug);
+    const retained = runs.filter((run) => !run.debug);
+    await this.#writeJson(this.runsFile, retained);
+    for (const run of debugRuns) {
+      if (run.evidenceDir) await rm(run.evidenceDir, { recursive: true, force: true });
+      else await rm(this.getRunDirFor(run.id), { recursive: true, force: true });
+    }
+    await this.appendAudit({ type: "run.debug_cleared", count: debugRuns.length });
+    return { cleared: debugRuns.length, retained: retained.length };
   }
 
   async savePickerEvent(event) {
@@ -441,7 +466,7 @@ export class StudioStore {
       workflows: await this.listWorkflows(),
       profiles: await this.listProfiles(),
       registry: await this.getRegistry(),
-      runs: await this.listRuns({ limit: 500 })
+      runs: (await this.listRuns({ limit: 500 })).runs
     };
   }
 
@@ -527,7 +552,9 @@ export class StudioStore {
   }
 
   async #migrateSeedData() {
-    const defaults = createDefaultProfiles(this.clock);
+    const defaults = createDefaultProfiles(this.clock, {
+      browserProfilesDir: this.browserProfilesDir
+    });
     const profiles = await this.#readJson(this.profilesFile, []);
     let profilesChanged = false;
     const migratedProfiles = profiles.map((profile) => {
@@ -546,6 +573,11 @@ export class StudioStore {
         lastCheckedAt: profile.lastCheckedAt ?? fallback.lastCheckedAt,
         leasedRunId: profile.status === "busy" ? profile.leasedRunId ?? null : null
       };
+      if (profile.id === "local-chromium" && !profile.profileDir) {
+        migrated.profileDir = fallback.profileDir;
+        migrated.browserChannel = profile.browserChannel || fallback.browserChannel;
+        migrated.notes = fallback.notes;
+      }
       profilesChanged ||= JSON.stringify(migrated) !== JSON.stringify(profile);
       return migrated;
     });
@@ -850,8 +882,11 @@ function createDefaultRegistry(clock = () => new Date()) {
   };
 }
 
-function createDefaultProfiles(clock = () => new Date()) {
+function createDefaultProfiles(clock = () => new Date(), { browserProfilesDir = null } = {}) {
   const now = clock().toISOString();
+  const localChromiumProfileDir = browserProfilesDir
+    ? path.join(browserProfilesDir, "local-chromium")
+    : "";
   return [
     {
       id: "dry-run-demo",
@@ -889,10 +924,10 @@ function createDefaultProfiles(clock = () => new Date()) {
       platform: "",
       accountLabel: "",
       loginState: "unchecked",
-      profileDir: "",
+      profileDir: localChromiumProfileDir,
       profileDirectory: "",
       browserType: "chromium",
-      browserChannel: "",
+      browserChannel: "chrome",
       headless: false,
       status: "ready",
       leasedRunId: null,
@@ -905,7 +940,7 @@ function createDefaultProfiles(clock = () => new Date()) {
         timeoutMs: 10_000
       },
       tags: ["local", "browser"],
-      notes: "Use for controlled local Playwright workflows. Add a profileDir before using logged-in sites.",
+      notes: "Dedicated WebOps Forge Chrome user-data directory. Open it once, log in manually, then reuse it for controlled Playwright workflows.",
       createdAt: now,
       updatedAt: now,
       lastRunAt: null,

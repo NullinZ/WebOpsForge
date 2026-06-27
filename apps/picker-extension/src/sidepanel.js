@@ -26,6 +26,12 @@ stopPickBtn.addEventListener("click", async () => {
   await stopPick();
 });
 
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  stopPick().catch(() => {});
+});
+
 async function refreshStatus() {
   const status = await chrome.runtime.sendMessage({ type: "GET_PICKER_STATUS" });
   const tab = status?.tab;
@@ -62,7 +68,7 @@ async function startPick(button) {
       feedback.textContent = `启动失败：${statusMessage(response?.error, response?.targetUrl)}`;
       return;
     }
-    feedback.textContent = "拾取已启动，请点击网页里的目标控件；可点“停止拾取”或按 ESC 取消。";
+    feedback.textContent = `拾取已启动：${tabSummary(response.tab)}。请点击网页里的目标控件；可点“停止拾取”或按 ESC 取消。`;
     started = true;
   } catch (error) {
     feedback.textContent = `启动失败：${error?.message || "unknown"}`;
@@ -91,9 +97,14 @@ async function stopPick() {
 
 function statusMessage(reason, targetUrl = "") {
   if (reason === "picker_session_active") return targetUrl ? `待拾取：${targetUrl}` : "待拾取";
-  if (reason === "no_picker_session") return "没有待拾取节点，会自动收起";
+  if (reason === "no_picker_session") return "没有待拾取节点，请先在 Studio 点击“拾取节点”";
   if (reason === "unsupported_page") return "当前页面不支持拾取";
   return "等待拾取会话";
+}
+
+function tabSummary(tab) {
+  if (!tab) return "当前网页";
+  return tab.title || tab.url || "当前网页";
 }
 
 function setButtonsEnabled(enabled, { picking = false } = {}) {
@@ -114,3 +125,6 @@ function setBusy(button, busy) {
 
 refreshStatus();
 setInterval(refreshStatus, 2000);
+setInterval(() => {
+  chrome.runtime.sendMessage({ type: "POLL_EXECUTOR_JOB" }).catch(() => {});
+}, 500);

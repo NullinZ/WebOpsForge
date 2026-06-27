@@ -5,8 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StudioStore, createRunQueue } from "../../src/index.mjs";
 import { createWorkflowDebugSlice } from "../../src/studio/debug-workflow.mjs";
+import { createExtensionExecutor } from "../../src/studio/extension-executor.mjs";
 import { discoverLocalBrowserProfiles } from "../../src/studio/local-browser-profiles.mjs";
-import { probeProfileSession } from "../../src/studio/profile-session.mjs";
+import { createProfileBrowserSessionPool } from "../../src/studio/profile-browser-session-pool.mjs";
+import { openProfileLoginWindow, probeProfileSession } from "../../src/studio/profile-session.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -15,7 +17,14 @@ const host = process.env.HOST ?? "127.0.0.1";
 const basePaths = parseBasePaths(process.env.BASE_PATHS ?? process.env.BASE_PATH ?? "");
 const store = new StudioStore();
 await store.init();
-const queue = createRunQueue({ store, concurrency: Number(process.env.WEBOPS_FORGE_CONCURRENCY ?? 1) });
+const extensionExecutor = createExtensionExecutor();
+const profileBrowserSessions = createProfileBrowserSessionPool();
+const queue = createRunQueue({
+  store,
+  concurrency: Number(process.env.WEBOPS_FORGE_CONCURRENCY ?? 1),
+  chromeExtensionExecutor: extensionExecutor,
+  profileBrowserSessions
+});
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -64,7 +73,9 @@ async function handleApi(req, res, url) {
       modes: ["dry-run", "playwright"],
       operationModes: ["browser", "api"],
       registry: summarizeRegistry(await store.getRegistry()),
-      profiles: (await store.listProfiles()).length
+      profiles: (await store.listProfiles()).length,
+      profileBrowserSessions: profileBrowserSessions.status(),
+      extensionExecutor: extensionExecutor.status()
     });
     return;
   }
@@ -110,7 +121,36 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (parts[0] === "extension-executor") {
+    await handleExtensionExecutor(req, res, parts, url);
+    return;
+  }
+
   sendJson(res, 404, { error: { message: "API route not found" } });
+}
+
+async function handleExtensionExecutor(req, res, parts, url) {
+  if (parts[1] === "status" && req.method === "GET") {
+    sendJson(res, 200, extensionExecutor.status());
+    return;
+  }
+
+  if (parts[1] === "jobs" && req.method === "GET") {
+    sendJson(res, 200, {
+      job: extensionExecutor.claimNext({
+        source: url.searchParams.get("source") ?? "",
+        version: url.searchParams.get("version") ?? ""
+      })
+    });
+    return;
+  }
+
+  if (parts[1] === "jobs" && parts[2] && parts[3] === "complete" && req.method === "POST") {
+    sendJson(res, 200, extensionExecutor.complete(decodeURIComponent(parts[2]), await readJsonBody(req)));
+    return;
+  }
+
+  sendJson(res, 404, { error: { message: "Extension executor route not found" } });
 }
 
 async function handlePicker(req, res, parts, url) {
@@ -227,7 +267,7 @@ async function handleWorkflows(req, res, parts) {
     const debug = normalizeRunDebug(body.debug);
     const workflowOverride = debug
       ? createWorkflowDebugSlice(body.workflow ?? workflow.workflow, debug.targetStepId)
-      : null;
+      : body.workflow ?? null;
     const run = await store.createRun({
       workflowId: id,
       mode: body.mode ?? defaults.mode ?? "dry-run",
@@ -312,6 +352,31 @@ async function handleProfiles(req, res, parts) {
     return;
   }
 
+  if (req.method === "POST" && id && parts[2] === "open-login") {
+    const current = await requireProfile(id);
+    if (current.status === "busy" && current.leasedRunId) {
+      const error = new Error(`Profile is busy: ${current.name}`);
+      error.statusCode = 409;
+      error.code = "PROFILE_BUSY";
+      throw error;
+    }
+    const result = await openProfileLoginWindow({
+      profile: current,
+      overrides: await readJsonBody(req),
+      profileBrowserSessions
+    });
+    await store.appendAudit({
+      type: "profile.login_window_opened",
+      profileId: id,
+      profileName: current.name,
+      browserChannel: result.browserChannel,
+      profileDirectory: result.profileDirectory,
+      url: result.url
+    });
+    sendJson(res, 200, { profile: current, result });
+    return;
+  }
+
   if (req.method === "PUT" && id) {
     const current = await requireProfile(id);
     sendJson(res, 200, { profile: await store.saveProfile({ ...current, ...(await readJsonBody(req)), id }) });
@@ -331,7 +396,13 @@ async function handleRuns(req, res, parts, url) {
 
   if (req.method === "GET" && !id) {
     const limit = Number(url.searchParams.get("limit") ?? 50);
-    sendJson(res, 200, { runs: await store.listRuns({ limit }) });
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    sendJson(res, 200, await store.listRuns({ limit, offset }));
+    return;
+  }
+
+  if (req.method === "DELETE" && id === "debug") {
+    sendJson(res, 200, await store.clearDebugRuns());
     return;
   }
 

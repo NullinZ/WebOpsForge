@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { BrowserActionError } from "../errors.mjs";
+import { BrowserActionError, BrowserBlockedError } from "../errors.mjs";
 
 export function createChromeProfileHandoffDriver({
   browserChannel = "chrome",
   profileDirectory = null,
-  opener = spawnDetached
+  opener = spawnDetached,
+  executor = null,
+  nativeExecutor = null
 } = {}) {
   const appName = appNameForChannel(browserChannel);
   const handoffTarget = handoffTargetForChannel(browserChannel, { profileDirectory });
@@ -32,6 +34,7 @@ export function createChromeProfileHandoffDriver({
           }
         });
       }
+      await activateBrowser(appName).catch(() => {});
       currentUrl = targetUrl;
       return {
         url: targetUrl,
@@ -46,14 +49,14 @@ export function createChromeProfileHandoffDriver({
       return currentUrl;
     },
     async close() {},
-    waitFor: unsupported("waitFor", () => currentUrl),
-    click: unsupported("click", () => currentUrl),
-    fill: unsupported("fill", () => currentUrl),
-    press: unsupported("press", () => currentUrl),
-    extract: unsupported("extract", () => currentUrl),
-    extractList: unsupported("extractList", () => currentUrl),
-    extractDetail: unsupported("extractDetail", () => currentUrl),
-    extractMedia: unsupported("extractMedia", () => currentUrl),
+    waitFor: runViaExecutor("waitFor", () => currentUrl, executor, nativeExecutor),
+    click: runViaExecutor("click", () => currentUrl, executor, nativeExecutor),
+    fill: runViaExecutor("fill", () => currentUrl, executor, nativeExecutor),
+    press: runViaExecutor("press", () => currentUrl, executor, nativeExecutor),
+    extract: runViaExecutor("extract", () => currentUrl, executor, nativeExecutor),
+    extractList: runViaExecutor("extractList", () => currentUrl, executor, nativeExecutor),
+    extractDetail: runViaExecutor("extractDetail", () => currentUrl, executor, nativeExecutor),
+    extractMedia: runViaExecutor("extractMedia", () => currentUrl, executor, nativeExecutor),
     paginate: unsupported("paginate", () => currentUrl),
     screenshot: unsupported("screenshot", () => currentUrl),
     apiCall: unsupported("apiCall", () => currentUrl)
@@ -107,6 +110,27 @@ async function spawnDetached(command, args) {
   child.unref();
 }
 
+async function activateBrowser(appName) {
+  if (process.platform !== "darwin") return;
+  await new Promise((resolve) => {
+    const child = spawn("/usr/bin/osascript", ["-e", `tell application "${String(appName).replace(/"/g, '\\"')}" to activate`], {
+      stdio: "ignore"
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve();
+    }, 1000);
+    child.on("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 function normalizeHttpUrl(url) {
   const parsed = new URL(String(url ?? ""));
   if (!["http:", "https:"].includes(parsed.protocol)) {
@@ -118,18 +142,65 @@ function normalizeHttpUrl(url) {
   return parsed.toString();
 }
 
+function runViaExecutor(action, getCurrentUrl, executor, nativeExecutor) {
+  return async (params = {}) => {
+    const currentUrl = getCurrentUrl?.() ?? null;
+    if (executor?.run && shouldUseExtensionExecutor(executor)) {
+      try {
+        const result = await executor.run({
+          action,
+          currentUrl,
+          params
+        }, {
+          timeoutMs: params.timeoutMs
+        });
+        return {
+          ...result,
+          via: result?.via ?? "chrome-extension-executor",
+          action,
+          currentUrl: result?.url ?? currentUrl
+        };
+      } catch (error) {
+        if (!nativeExecutor?.run || !isExtensionUnavailable(error)) throw error;
+      }
+    }
+    if (nativeExecutor?.run) {
+      return nativeExecutor.run({ action, currentUrl, params }, { timeoutMs: params.timeoutMs });
+    }
+    throw unsupportedActionError(action, currentUrl);
+  };
+}
+
+function shouldUseExtensionExecutor(executor) {
+  if (typeof executor.status !== "function") return true;
+  const status = executor.status();
+  if (!status?.lastSeenAt) return false;
+  const lastSeenMs = new Date(status.lastSeenAt).getTime();
+  return Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs < 5000;
+}
+
+function isExtensionUnavailable(error) {
+  const reason = String(error?.reason ?? error?.details?.reason ?? "");
+  return reason === "front_chrome_executor_unavailable";
+}
+
 function unsupported(action, getCurrentUrl) {
   return async () => {
-    throw new BrowserActionError(
-      `Chrome profile handoff opened the page in the front browser, but action ${action} requires CDP, the extension executor, or an isolated Playwright profile.`,
-      {
-        code: "BROWSER_ACTION_ERROR",
-        details: {
-          reason: "chrome_profile_handoff_unsupported_action",
-          action,
-          currentUrl: getCurrentUrl?.() ?? null
-        }
-      }
-    );
+    throw unsupportedActionError(action, getCurrentUrl?.() ?? null);
   };
+}
+
+function unsupportedActionError(action, currentUrl) {
+  return new BrowserBlockedError(
+    `Chrome profile handoff opened the page in the front browser, but action ${action} requires the WebOps Forge Picker extension executor, CDP, or an isolated Playwright profile.`,
+    {
+      reason: "front_chrome_uncontrolled",
+      recoverable: true,
+      details: {
+        previousReason: "chrome_profile_handoff_unsupported_action",
+        action,
+        currentUrl
+      }
+    }
+  );
 }

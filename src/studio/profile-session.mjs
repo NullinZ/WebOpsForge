@@ -1,5 +1,12 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
 import { BrowserActionError } from "../errors.mjs";
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
+
+const DEFAULT_LOGIN_URL = "about:blank";
 
 export async function probeProfileSession({ profile, overrides = {}, clock = () => new Date() } = {}) {
   if (!profile) throw new Error("probeProfileSession requires profile");
@@ -22,6 +29,54 @@ export async function probeProfileSession({ profile, overrides = {}, clock = () 
       source: "dry-run",
       message: "Dry-run session probes use configured profile metadata."
     }
+  };
+}
+
+export async function openProfileLoginWindow({ profile, overrides = {}, opener = spawnDetached, profileBrowserSessions = null, clock = () => new Date() } = {}) {
+  if (!profile) throw new Error("openProfileLoginWindow requires profile");
+  if (profileBrowserSessions?.open) {
+    return profileBrowserSessions.open({ profile, overrides });
+  }
+  const mode = overrides.mode ?? profile.mode ?? "dry-run";
+  if (mode !== "playwright") {
+    const error = new Error("Only Playwright browser profiles can be opened for manual login");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const profileDir = overrides.profileDir ?? profile.profileDir ?? "";
+  if (!profileDir) {
+    const error = new Error("Profile Dir is required to open a persistent login window");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const browserChannel = overrides.browserChannel ?? profile.browserChannel ?? "chrome";
+  const profileDirectory = overrides.profileDirectory ?? profile.profileDirectory ?? "";
+  const targetUrl = normalizeLoginUrl(
+    overrides.url
+      ?? overrides.sessionCheckUrl
+      ?? overrides.targetUrl
+      ?? profile.sessionCheck?.url
+      ?? DEFAULT_LOGIN_URL
+  );
+  await mkdir(profileDir, { recursive: true });
+  const command = browserExecutableForChannel(browserChannel);
+  const args = loginWindowArgs({
+    profileDir,
+    profileDirectory,
+    browserChannel,
+    targetUrl
+  });
+  await opener(command, args);
+  return {
+    opened: true,
+    mode,
+    browserChannel,
+    profileDir,
+    profileDirectory,
+    url: targetUrl,
+    openedAt: clock().toISOString()
   };
 }
 
@@ -109,6 +164,60 @@ function mergeIgnoreDefaultArgs(currentValue, additionalValues) {
     ...additionalValues
   ].map(String).filter(Boolean);
   return values.length ? Array.from(new Set(values)) : undefined;
+}
+
+function normalizeLoginUrl(url) {
+  const value = String(url ?? "").trim();
+  if (!value) return DEFAULT_LOGIN_URL;
+  if (value === "about:blank" || /^https?:\/\//i.test(value)) return value;
+  const error = new Error("Login window URL must be http(s) or about:blank");
+  error.statusCode = 400;
+  throw error;
+}
+
+function browserExecutableForChannel(channel) {
+  if (channel === "msedge") return "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge";
+  if (channel === "chromium") return "/Applications/Chromium.app/Contents/MacOS/Chromium";
+  return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+}
+
+function loginWindowArgs({ profileDir, profileDirectory, browserChannel, targetUrl }) {
+  const args = [];
+  if (shouldPassUserDataDir({ profileDir, profileDirectory, browserChannel })) {
+    args.push(`--user-data-dir=${profileDir}`);
+  }
+  if (profileDirectory) args.push(`--profile-directory=${profileDirectory}`);
+  args.push(targetUrl);
+  return args;
+}
+
+function shouldPassUserDataDir({ profileDir, profileDirectory, browserChannel }) {
+  if (!profileDir) return false;
+  if (!profileDirectory) return true;
+  return normalizePath(profileDir) !== normalizePath(defaultUserDataDirForChannel(browserChannel));
+}
+
+function defaultUserDataDirForChannel(channel) {
+  if (channel === "msedge") return path.join(homedir(), "Library/Application Support/Microsoft Edge");
+  if (channel === "chromium") return path.join(homedir(), "Library/Application Support/Chromium");
+  return path.join(homedir(), "Library/Application Support/Google/Chrome");
+}
+
+function normalizePath(value) {
+  return path.resolve(String(value ?? ""));
+}
+
+async function spawnDetached(command, args) {
+  if (!existsSync(command)) {
+    const error = new Error(`Browser executable not found: ${command}`);
+    error.statusCode = 500;
+    throw error;
+  }
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
 }
 
 async function extractOptional(driver, selector, timeoutMs) {

@@ -67,9 +67,9 @@
 
             <div class="tabs" role="tablist">
               <button class="tab active" data-tab="builder" type="button" data-i18n="builder">Builder</button>
-              <button class="tab" data-tab="graph" type="button" data-i18n="graph">Graph</button>
+              <button class="tab" data-tab="graph" type="button" data-i18n="graph">Visual Builder</button>
               <button class="tab" data-tab="registry" type="button" data-i18n="registry">Registry</button>
-              <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow</button>
+              <button class="tab" data-tab="workflow" type="button" data-i18n="workflow">Workflow JSON</button>
               <button class="tab" data-tab="run" type="button" data-i18n="runConfig">Run Config</button>
             </div>
           </div>
@@ -116,10 +116,16 @@
           </div>
 
           <div class="tab-panel" id="graphPanel">
-            <div class="section-head compact">
-              <div>
-                <h2 data-i18n="workflowGraph">Workflow Graph</h2>
-                <p class="section-note" data-i18n="workflowGraphNote">Drag nodes to arrange the execution map.</p>
+            <div class="section-head compact graph-section-head">
+              <div class="graph-title-row">
+                <h2 data-i18n="workflowGraph">Visual Builder</h2>
+                <button class="graph-help-button" id="graphHelpButton" type="button" aria-label="Visual workflow builder">
+                  <span class="graph-help-icon" aria-hidden="true">?</span>
+                  <span class="graph-help-popover" role="tooltip">
+                    <strong data-i18n="workflowGraphHelpTitle">Visual Workflow Builder</strong>
+                    <span data-i18n="workflowGraphNote">Edit nodes on the execution map; changes sync with Workflow JSON. Layout is saved as graph metadata.</span>
+                  </span>
+                </button>
               </div>
               <div class="button-row">
                 <button class="secondary" id="addGraphNodeButton" type="button" data-i18n="addNode">Add Node</button>
@@ -348,7 +354,7 @@
 
           <div class="tab-panel" id="workflowPanel">
             <div class="section-head compact">
-              <h2 data-i18n="definition">Definition</h2>
+              <h2 data-i18n="definition">Workflow JSON Source</h2>
               <div class="button-row">
                 <button class="secondary" id="validateWorkflowButton" type="button" data-i18n="validate">Validate</button>
                 <button class="secondary" id="saveWorkflowButton" type="button" data-i18n="save">Save</button>
@@ -417,6 +423,7 @@
               <div class="section-head compact">
                 <h2 data-i18n="profileDetails">Profile Details</h2>
                 <div class="button-row">
+                  <button class="secondary" id="openProfileButton" type="button" data-i18n="openLoginWindow">Open Login Window</button>
                   <button class="secondary" id="checkProfileButton" type="button" data-i18n="checkSession">Check Session</button>
                   <button class="secondary" id="saveProfileButton" type="button" data-i18n="saveProfile">Save Profile</button>
                 </div>
@@ -505,7 +512,10 @@
         <aside class="inspector">
           <div class="section-head">
             <h2 data-i18n="runs">Runs</h2>
-            <span id="queueStatus" class="pill" data-i18n="idle">idle</span>
+            <div class="inline-actions">
+              <button class="secondary" id="clearDebugRunsButton" type="button" data-i18n="clearDebugRuns">Clear Debug</button>
+              <span id="queueStatus" class="pill" data-i18n="idle">idle</span>
+            </div>
           </div>
           <div id="runList" class="run-list"></div>
 
@@ -519,6 +529,12 @@
               <button class="secondary" id="retryRunButton" type="button" data-i18n="retry">Retry</button>
             </div>
             <div id="runActivity" class="run-activity muted"></div>
+            <div class="call-log-section">
+              <div class="section-head compact">
+                <h2 data-i18n="stepLogs">Call Log</h2>
+              </div>
+              <div id="runStepLog" class="run-step-log"></div>
+            </div>
             <div id="runOutputPreview" class="output-preview"></div>
             <pre id="runSummary" class="summary-box"></pre>
           </div>
@@ -541,6 +557,19 @@
       </main>
     </div>
 
+    <div id="runInputModal" class="modal-backdrop" hidden>
+      <div class="run-input-modal" role="dialog" aria-modal="true" aria-labelledby="runInputModalTitle">
+        <div class="modal-head">
+          <h2 id="runInputModalTitle" data-i18n="runVariablesTitle">Run Variables</h2>
+          <p data-i18n="runVariablesDescription">Fill the values referenced by this workflow before running.</p>
+        </div>
+        <div id="runInputFields" class="run-input-fields"></div>
+        <div class="modal-actions">
+          <button class="secondary" id="cancelRunInputButton" type="button" data-i18n="cancel">Cancel</button>
+          <button class="primary" id="confirmRunInputButton" type="button" data-i18n="runWorkflow">Run Workflow</button>
+        </div>
+      </div>
+    </div>
     <div id="toast" class="toast" role="status"></div>
     <script type="module" src="%WEBOPS_BASE_PATH%/app.js"></script>
   </body>

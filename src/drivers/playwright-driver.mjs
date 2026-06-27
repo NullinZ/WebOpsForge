@@ -151,41 +151,53 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       return { url: page.url() };
     },
     async waitFor({ selector, state = "visible", timeoutMs, targetIdentity = null }) {
-      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity, preWait: false });
       await locator.waitFor({ state, timeout: timeoutMs });
-      return { selector, state };
+      return { selector, state, target: await describeTarget(locator, target) };
     },
     async click({ selector, timeoutMs, targetIdentity = null }) {
-      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
       await locator.click({ timeout: timeoutMs });
-      return { selector };
+      return { selector, target: await describeTarget(locator, target) };
     },
     async fill({ selector, value, timeoutMs, redact = false, targetIdentity = null }) {
-      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
-      await locator.fill(String(value), { timeout: timeoutMs });
-      return { selector, filled: true, redacted: redact };
+      const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      const stringValue = String(value);
+      await locator.fill(stringValue, { timeout: timeoutMs });
+      const actualValue = await locator.inputValue({ timeout: Math.min(Number(timeoutMs ?? 10_000), 1000) }).catch(() => null);
+      return {
+        selector,
+        target: await describeTarget(locator, target),
+        value: redact ? "[redacted]" : stringValue,
+        actualValue: redact ? "[redacted]" : actualValue,
+        filled: true,
+        redacted: redact
+      };
     },
     async press({ selector = null, key, timeoutMs, targetIdentity = null }) {
+      let target = null;
       if (selector) {
-        const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+        const resolved = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+        const locator = resolved.locator;
+        target = await describeTarget(locator, resolved.target);
         await locator.press(key, { timeout: timeoutMs });
       } else {
         await page.keyboard.press(key);
       }
-      return { selector, key };
+      return { selector, key, target };
     },
     async extract({ selector, mode = "text", attribute = null, timeoutMs, targetIdentity = null }) {
-      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
       await locator.waitFor({ state: "attached", timeout: timeoutMs });
       if (mode === "attribute") {
-        return { selector, mode, attribute, value: await locator.getAttribute(attribute, { timeout: timeoutMs }) };
+        return { selector, mode, attribute, target: await describeTarget(locator, target), value: await locator.getAttribute(attribute, { timeout: timeoutMs }) };
       }
-      if (mode === "html") return { selector, mode, value: await locator.innerHTML({ timeout: timeoutMs }) };
-      if (mode === "value") return { selector, mode, value: await locator.inputValue({ timeout: timeoutMs }) };
-      return { selector, mode: "text", value: await locator.innerText({ timeout: timeoutMs }) };
+      if (mode === "html") return { selector, mode, target: await describeTarget(locator, target), value: await locator.innerHTML({ timeout: timeoutMs }) };
+      if (mode === "value") return { selector, mode, target: await describeTarget(locator, target), value: await locator.inputValue({ timeout: timeoutMs }) };
+      return { selector, mode: "text", target: await describeTarget(locator, target), value: await locator.innerText({ timeout: timeoutMs }) };
     },
     async extractList({ selector, fields = {}, limit = null, timeoutMs, targetIdentity = null }) {
-      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
       await locator.first().waitFor({ state: "attached", timeout: timeoutMs });
       const count = await locator.count();
       const max = limit == null ? count : Math.min(count, Number(limit));
@@ -193,7 +205,7 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       for (let index = 0; index < max; index += 1) {
         value.push(await extractRecordFromLocator(locator.nth(index), fields, { timeoutMs, page }));
       }
-      return { selector, value, count: value.length };
+      return { selector, target: await describeTarget(locator, target), value, count: value.length };
     },
     async extractDetail({ fields = {}, timeoutMs }) {
       return {
@@ -201,7 +213,7 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       };
     },
     async extractMedia({ selector, sources = null, limit = null, timeoutMs, targetIdentity = null }) {
-      const locator = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
+      const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
       await locator.first().waitFor({ state: "attached", timeout: timeoutMs });
       const count = await locator.count();
       const max = limit == null ? count : Math.min(count, Number(limit));
@@ -212,7 +224,7 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
           index
         }));
       }
-      return { selector, value, count: value.length };
+      return { selector, target: await describeTarget(locator, target), value, count: value.length };
     },
     async paginate({ nextSelector, maxPages = 1, waitForSelector = null, timeoutMs }) {
       const urls = [];
@@ -360,8 +372,18 @@ function extractMediaElement(node, { sources = null, index = null } = {}) {
   };
 }
 
-async function resolveTargetLocator(page, { selector, timeoutMs, targetIdentity = null }) {
-  if (!targetIdentity) return page.locator(selector);
+async function resolveTargetLocator(page, { selector, timeoutMs, targetIdentity = null, preWait = true }) {
+  if (!targetIdentity) {
+    const locator = page.locator(selector);
+    if (preWait) await locator.first().waitFor({ state: "attached", timeout: timeoutMs });
+    return {
+      locator,
+      target: {
+        selector,
+        strategy: "selector"
+      }
+    };
+  }
 
   const candidates = candidateSelectors(selector, targetIdentity);
   const attempts = [];
@@ -398,7 +420,20 @@ async function resolveTargetLocator(page, { selector, timeoutMs, targetIdentity 
 
     if (!top || top.score < minScore) continue;
     if (ranked.length === 1 || top.score - (second?.score ?? 0) >= ambiguityMargin) {
-      return locator.nth(top.index);
+      return {
+        locator: locator.nth(top.index),
+        target: {
+          selector: candidate,
+          requestedSelector: selector,
+          strategy: "targetIdentity",
+          index: top.index,
+          count: scored.length,
+          visibleCount: visibleScored.length,
+          score: top.score,
+          secondScore: second?.score ?? 0,
+          attempts
+        }
+      };
     }
   }
 
@@ -411,6 +446,22 @@ async function resolveTargetLocator(page, { selector, timeoutMs, targetIdentity 
       attempts
     }
   });
+}
+
+async function describeTarget(locator, target) {
+  const count = await locator.count().catch(() => null);
+  const visibleCount = await locator.evaluateAll((nodes) => nodes.filter((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  }).length).catch(() => null);
+  return {
+    ...(target ?? {}),
+    ...(count == null || target?.count != null ? {} : { count }),
+    ...(visibleCount == null || target?.visibleCount != null ? {} : { visibleCount }),
+    ...(count == null ? {} : { resolvedCount: count }),
+    ...(visibleCount == null ? {} : { resolvedVisibleCount: visibleCount })
+  };
 }
 
 function candidateSelectors(selector, targetIdentity) {

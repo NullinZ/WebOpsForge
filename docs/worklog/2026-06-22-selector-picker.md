@@ -122,6 +122,20 @@
 - 修复：新增 `STOP_PICK` 和 `PICKER_CANCELLED` 消息链路，side panel 增加“停止拾取”按钮；background 记录当前 active pick 并在完成、停止、ESC、tab 关闭或导航时清理；`OPEN_STUDIO` 先查找最近使用的 `127.0.0.1:4177` / `localhost:4177` 标签并聚焦。
 - 验证：扩展 JS 语法检查通过；`npm run check` 通过。
 
+### PICKER-008：无拾取会话时扩展入口仍可打开
+
+- 现象：没有 active picker session 时，Chrome 工具栏点击 `WebOps Forge Picker` 没有反应，操作者无法从扩展侧边栏进入 Studio 或看到下一步提示。
+- 原因：background 把 side panel 和 action 的启用条件绑定到了 `target.pickable`；而 `target.pickable` 只有在 Studio 已发布 picker session 后才为 true。
+- 修复：将扩展入口可打开条件改为普通 `http/https` 页面；拾取按钮仍然要求 active picker session，避免误拾取。
+- 验证：扩展 JS 语法检查通过；`GET /api/health` 与 `/api/runtime` 确认 4177 是当前 Studio。
+
+### PICKER-009：多窗口 Douyin 页拾取没有进入目标标签
+
+- 现象：Studio 已有 active picker session，Douyin 页面上点“搜索”无反应，按 `Esc` 也没有取消反馈。
+- 原因：background 用 `chrome.tabs.query({ active: true, currentWindow: true })` 选目标标签；在多窗口、side panel 或最近焦点变化下，`START_PICK` 可能被发到非 Douyin 标签。
+- 修复：目标标签选择改为优先 Chrome 最后聚焦窗口的 active tab；存在 picker session 时优先匹配 session 的同站点 active tab。`STOP_PICK` 失败时会向所有普通网页标签广播清理，side panel 聚焦时按 `Esc` 也会发送停止；扩展版本提升到 `0.1.1` 便于确认 Chrome 已重载最新代码。
+- 验证：扩展 JS 语法检查通过；`npm run check` 通过；AppleScript 只读确认前台 active tab 为 Douyin 搜索页。
+
 ## 验证记录
 
 - 命令：`npm run check` 通过，14 个 node tests 通过，dry-run 示例完成。

@@ -8,6 +8,7 @@ The picker is intentionally not a simple "copy selector" tool. It captures an el
 
 1. Run Studio on `http://127.0.0.1:4177`.
 2. Load the Chrome extension from `/Users/nullin/GitHubO/WebOpsForge/apps/picker-extension`.
+   When extension files change, reload the unpacked `WebOps Forge Picker` extension in `chrome://extensions`.
 3. In Studio, select the relevant node, ideally the `goto` step or a browser step after it, and click `Pick Node`.
 4. Studio creates a short-lived picker session with the inferred target URL from the nearest `goto`.
 5. Open or switch to the page you want to pick from. The inferred URL is a reference, not an enforced match.
@@ -15,6 +16,12 @@ The picker is intentionally not a simple "copy selector" tool. It captures an el
 7. Click the target element in the page. To cancel an active pick, click `停止拾取` in the side panel or press `ESC`.
 8. The extension posts the pick to `POST /api/picker/events`.
 9. Studio automatically applies the new pick to the pending picker node, clears the picker session, and collapses the picker panel. You can also refresh picks and apply one manually in the node editor.
+
+## Front Chrome Execution
+
+The same extension now executes browser actions for an already-open Chrome profile after Studio hands off the target URL to the front browser. This is used when the profile is locked by normal Chrome and Playwright cannot safely take over the user data directory.
+
+Supported executor actions include `fill`, `click`, `waitFor`, `press`, `extract`, `extractList`, `extractDetail`, and `extractMedia`. Run logs show `via: chrome-extension-executor`, selector match counts, and actual filled values when the extension completes a job.
 
 ## Element Identity
 
@@ -45,7 +52,7 @@ The bundled Chrome picker in `apps/picker-extension` ranks selectors in this ord
 
 ## Picker Session Scope
 
-The extension does not guess whether the current tab is the right target page. Studio publishes the active picker request to `GET /api/picker/session`, and the extension enables its side panel on regular `http` and `https` pages while that session exists.
+The extension does not guess whether the current tab is the right target page. Studio publishes the active picker request to `GET /api/picker/session`. The extension side panel stays openable on regular `http` and `https` pages so operators can recover by opening Studio from the panel, but the actual pick buttons stay disabled until an active picker session exists.
 
 `targetUrl` and `allowedUrls` are stored as workflow context and shown as references. They are not used to hide the extension when a site redirects from one host to another, such as `douyin.com` to `www.douyin.com`.
 

@@ -15,6 +15,9 @@ import {
   createDryRunDriver,
   createFileEvidenceStore,
   createMemoryEvidenceStore,
+  createMacChromeAppleScriptExecutor,
+  createProfileBrowserSessionPool,
+  openProfileLoginWindow,
   createPlaywrightDriver,
   createRateLimiter,
   createRegistryPack,
@@ -232,6 +235,73 @@ test("blocks persistent profile launch when Chrome owns the profile lock", async
   }
 });
 
+test("opens a persistent browser profile for manual login without closing it", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-login-profile-"));
+  try {
+    const calls = [];
+    const result = await openProfileLoginWindow({
+      profile: {
+        id: "local-chromium",
+        name: "Local Chromium",
+        mode: "playwright",
+        profileDir: dir,
+        profileDirectory: "",
+        browserChannel: "chrome",
+        sessionCheck: { url: "https://www.douyin.com/" }
+      },
+      opener: async (command, args) => {
+        calls.push({ command, args });
+      },
+      clock: () => new Date("2026-06-27T10:00:00.000Z")
+    });
+
+    assert.equal(result.opened, true);
+    assert.equal(result.profileDir, dir);
+    assert.equal(result.url, "https://www.douyin.com/");
+    assert.equal(result.openedAt, "2026-06-27T10:00:00.000Z");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+    assert.deepEqual(calls[0].args, [
+      `--user-data-dir=${dir}`,
+      "https://www.douyin.com/"
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("opens manual login through a reusable controlled profile session when provided", async () => {
+  const calls = [];
+  const profileBrowserSessions = {
+    async open(payload) {
+      calls.push(payload);
+      return {
+        opened: true,
+        controlled: true,
+        profileDir: payload.profile.profileDir,
+        url: payload.overrides.url || "about:blank"
+      };
+    }
+  };
+  const result = await openProfileLoginWindow({
+    profile: {
+      id: "local-chromium",
+      name: "Local Chromium",
+      mode: "playwright",
+      profileDir: "/tmp/webops-profile",
+      profileDirectory: "",
+      browserChannel: "chrome"
+    },
+    overrides: {},
+    profileBrowserSessions
+  });
+
+  assert.equal(result.controlled, true);
+  assert.equal(result.url, "about:blank");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].profile.id, "local-chromium");
+});
+
 test("hands goto URLs to a local Chrome profile", async () => {
   const calls = [];
   const driver = createChromeProfileHandoffDriver({
@@ -256,9 +326,113 @@ test("hands goto URLs to a local Chrome profile", async () => {
     driver.fill({ selector: "#q", value: "chrome" }),
     (error) => {
       assert.match(error.message, /opened the page in the front browser/);
-      assert.equal(error.details.reason, "chrome_profile_handoff_unsupported_action");
+      assert.equal(error.code, "BROWSER_BLOCKED");
+      assert.equal(error.details.reason, "front_chrome_uncontrolled");
+      assert.equal(error.details.previousReason, "chrome_profile_handoff_unsupported_action");
       assert.equal(error.details.action, "fill");
       assert.equal(error.details.currentUrl, "https://douyin.com/");
+      return true;
+    }
+  );
+});
+
+test("hands front Chrome actions to an extension executor", async () => {
+  const calls = [];
+  const executorCalls = [];
+  const driver = createChromeProfileHandoffDriver({
+    browserChannel: "chrome",
+    profileDirectory: "Profile 2",
+    opener: async (command, args, options) => {
+      calls.push({ command, args, options });
+    },
+    executor: {
+      async run(payload, options) {
+        executorCalls.push({ payload, options });
+        return {
+          filled: true,
+          value: payload.params.value,
+          actualValue: payload.params.value,
+          target: { selector: payload.params.selector, count: 1, visibleCount: 1 }
+        };
+      }
+    }
+  });
+
+  await driver.goto({ url: "https://douyin.com", timeoutMs: 7000 });
+  const result = await driver.fill({ selector: "#q", value: "chrome", timeoutMs: 1200 });
+
+  assert.equal(calls.length, 1);
+  assert.equal(executorCalls.length, 1);
+  assert.equal(executorCalls[0].payload.action, "fill");
+  assert.equal(executorCalls[0].payload.currentUrl, "https://douyin.com/");
+  assert.equal(executorCalls[0].payload.params.selector, "#q");
+  assert.equal(executorCalls[0].payload.params.value, "chrome");
+  assert.equal(executorCalls[0].options.timeoutMs, 1200);
+  assert.equal(result.via, "chrome-extension-executor");
+  assert.equal(result.actualValue, "chrome");
+});
+
+test("hands front Chrome actions to a native AppleScript executor when the extension is inactive", async () => {
+  const calls = [];
+  const nativeCalls = [];
+  const driver = createChromeProfileHandoffDriver({
+    browserChannel: "chrome",
+    profileDirectory: "Profile 2",
+    opener: async (command, args, options) => {
+      calls.push({ command, args, options });
+    },
+    executor: {
+      status() {
+        return { lastSeenAt: null };
+      },
+      async run() {
+        throw new Error("extension should be skipped");
+      }
+    },
+    nativeExecutor: {
+      async run(payload, options) {
+        nativeCalls.push({ payload, options });
+        return {
+          via: "mac-chrome-applescript",
+          actualValue: payload.params.value,
+          target: { selector: payload.params.selector, count: 1, visibleCount: 1 }
+        };
+      }
+    }
+  });
+
+  await driver.goto({ url: "https://douyin.com", timeoutMs: 7000 });
+  const result = await driver.fill({ selector: "#q", value: "chrome", timeoutMs: 1200 });
+
+  assert.equal(calls.length, 1);
+  assert.equal(nativeCalls.length, 1);
+  assert.equal(nativeCalls[0].payload.action, "fill");
+  assert.equal(nativeCalls[0].payload.currentUrl, "https://douyin.com/");
+  assert.equal(nativeCalls[0].payload.params.selector, "#q");
+  assert.equal(result.via, "mac-chrome-applescript");
+  assert.equal(result.actualValue, "chrome");
+});
+
+test("reports disabled Chrome Apple Events JavaScript from the native executor", async () => {
+  const executor = createMacChromeAppleScriptExecutor({
+    osascript: async () => {
+      const error = new Error("execution error: JavaScript through Apple Events is turned off");
+      error.stderr = "JavaScript through Apple Events is turned off";
+      throw error;
+    }
+  });
+
+  if (!executor) return;
+
+  await assert.rejects(
+    executor.run({
+      action: "fill",
+      currentUrl: "https://douyin.com/",
+      params: { selector: "#q", value: "chrome", timeoutMs: 1000 }
+    }, { timeoutMs: 1000 }),
+    (error) => {
+      assert.equal(error.code, "BROWSER_BLOCKED");
+      assert.equal(error.details.reason, "front_chrome_javascript_disabled");
       return true;
     }
   );

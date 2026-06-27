@@ -1,19 +1,26 @@
 const STUDIO_ORIGIN = "http://127.0.0.1:4177";
 const PICKER_EVENTS_URL = `${STUDIO_ORIGIN}/api/picker/events`;
 const PICKER_SESSION_URL = `${STUDIO_ORIGIN}/api/picker/session`;
+const EXECUTOR_JOBS_URL = `${STUDIO_ORIGIN}/api/extension-executor/jobs`;
 const SIDE_PANEL_PATH = "src/sidepanel.html";
 const SESSION_CACHE_MS = 1200;
+const EXECUTOR_POLL_IDLE_MS = 800;
+const EXECUTOR_POLL_BUSY_MS = 120;
 
 let cachedPickerSession = null;
 let sessionCacheAt = 0;
 let activePick = null;
+let executorPollTimer = null;
+let executorPollBusy = false;
 
 chrome.runtime.onInstalled.addListener(() => {
   initializeSidePanel().catch(() => {});
+  startExecutorPolling();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   initializeSidePanel().catch(() => {});
+  startExecutorPolling();
 });
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -40,11 +47,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message.type === "GET_PICKER_STATUS") {
-      const tab = await getActiveTab();
+      startExecutorPolling();
       const [studio, session] = await Promise.all([
         fetchStudioStatus(),
         fetchPickerSession({ force: true })
       ]);
+      const tab = await resolvePickerTargetTab(session);
       const target = evaluateTabTarget(tab, session);
       sendResponse({
         ok: true,
@@ -56,14 +64,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message.type === "POLL_EXECUTOR_JOB") {
+      await pollExecutorJob();
+      sendResponse({ ok: true });
+      return;
+    }
+
     if (message.type === "OPEN_STUDIO") {
       sendResponse(await openOrFocusStudioTab());
       return;
     }
 
     if (message.type === "START_PICK") {
-      const tab = await getActiveTab();
       const session = await fetchPickerSession({ force: true });
+      const tab = await resolvePickerTargetTab(session);
       const target = evaluateTabTarget(tab, session);
       if (!target.pickable) {
         sendResponse({
@@ -135,6 +149,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function initializeSidePanel() {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   await refreshAllTabsSidePanels({ forceSessionRefresh: true });
+  startExecutorPolling();
 }
 
 async function refreshAllTabsSidePanels({ forceSessionRefresh = true } = {}) {
@@ -147,16 +162,18 @@ async function updateSidePanelForTab(tab, { forceSessionRefresh = false } = {}) 
   try {
     const session = await fetchPickerSession({ force: forceSessionRefresh });
     const target = evaluateTabTarget(tab, session);
-    const panelOptions = { tabId: tab.id, enabled: target.pickable };
-    if (target.pickable) panelOptions.path = SIDE_PANEL_PATH;
+    const panelOptions = { tabId: tab.id, enabled: target.canOpenPanel };
+    if (target.canOpenPanel) panelOptions.path = SIDE_PANEL_PATH;
     await chrome.sidePanel.setOptions(panelOptions);
     await chrome.action.setTitle({
       tabId: tab.id,
       title: target.pickable
         ? "WebOps Forge Picker: ready"
-        : "WebOps Forge Picker: waiting for a Studio picker session"
+        : target.canOpenPanel
+          ? "WebOps Forge Picker: open Studio to start a pick"
+          : "WebOps Forge Picker: unsupported page"
     }).catch(() => {});
-    if (target.pickable) {
+    if (target.canOpenPanel) {
       await chrome.action.enable(tab.id);
     } else {
       await chrome.action.disable(tab.id);
@@ -177,8 +194,54 @@ async function closeSidePanelForTab(tab) {
 }
 
 async function getActiveTab() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs[0] || null;
+  return resolveLastFocusedActiveTab();
+}
+
+async function resolvePickerTargetTab(session) {
+  const [lastFocusedTab, activeTabs] = await Promise.all([
+    resolveLastFocusedActiveTab(),
+    chrome.tabs.query({ active: true }).catch(() => [])
+  ]);
+  const candidates = uniqueTabs([lastFocusedTab, ...activeTabs])
+    .filter((tab) => tab?.id && isHttpUrl(tab.url));
+  if (!candidates.length) return lastFocusedTab || activeTabs[0] || null;
+
+  const sessionCandidates = candidates.filter((tab) => tabMatchesPickerSession(tab, session));
+  if (sessionCandidates.length) {
+    if (lastFocusedTab?.id && sessionCandidates.some((tab) => tab.id === lastFocusedTab.id)) return lastFocusedTab;
+    return sortTabsByRecent(sessionCandidates)[0];
+  }
+  return lastFocusedTab && isHttpUrl(lastFocusedTab.url) ? lastFocusedTab : sortTabsByRecent(candidates)[0];
+}
+
+async function resolveLastFocusedActiveTab() {
+  try {
+    const win = await chrome.windows.getLastFocused({ populate: true, windowTypes: ["normal"] });
+    return (win?.tabs || []).find((tab) => tab.active) || null;
+  } catch (_) {
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    return tabs[0] || null;
+  }
+}
+
+function uniqueTabs(tabs) {
+  const seen = new Set();
+  return tabs.filter((tab) => {
+    if (!tab?.id || seen.has(tab.id)) return false;
+    seen.add(tab.id);
+    return true;
+  });
+}
+
+function sortTabsByRecent(tabs) {
+  return [...tabs].sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+}
+
+function tabMatchesPickerSession(tab, session) {
+  if (!session?.id || !isHttpUrl(tab?.url)) return false;
+  const targets = [session.targetUrl, ...(session.allowedUrls || [])].filter(isHttpUrl);
+  if (!targets.length) return false;
+  return targets.some((targetUrl) => sameSiteUrl(tab.url, targetUrl));
 }
 
 async function openOrFocusStudioTab() {
@@ -219,9 +282,20 @@ async function stopActivePick(reason = "sidepanel") {
     activePick = null;
     return { ok: true, stopped: Boolean(result?.stopped), reason };
   } catch (error) {
+    const stopped = await stopPickInAllTabs(reason);
     activePick = null;
-    return { ok: true, stopped: false, reason: "picker_not_running", error: error?.message || "" };
+    return { ok: true, stopped, reason: stopped ? reason : "picker_not_running", error: stopped ? "" : error?.message || "" };
   }
+}
+
+async function stopPickInAllTabs(reason = "sidepanel") {
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  const results = await Promise.all(tabs.filter((tab) => isHttpUrl(tab.url)).map((tab) => (
+    chrome.tabs.sendMessage(tab.id, { type: "STOP_PICK", reason })
+      .then((result) => Boolean(result?.stopped))
+      .catch(() => false)
+  )));
+  return results.some(Boolean);
 }
 
 function compactTab(tab, target = evaluateTabTarget(tab, cachedPickerSession)) {
@@ -251,18 +325,26 @@ function compactActivePick(pick) {
 function evaluateTabTarget(tab, session) {
   const targetUrl = session?.targetUrl || session?.allowedUrls?.[0] || "";
   if (!isHttpUrl(tab?.url)) {
-    return { pickable: false, reason: "unsupported_page", targetUrl };
+    return { pickable: false, canOpenPanel: false, reason: "unsupported_page", targetUrl };
   }
   if (!session?.id) {
-    return { pickable: false, reason: "no_picker_session", targetUrl };
+    return { pickable: false, canOpenPanel: true, reason: "no_picker_session", targetUrl };
   }
-  return { pickable: true, reason: "picker_session_active", targetUrl };
+  return { pickable: true, canOpenPanel: true, reason: "picker_session_active", targetUrl };
 }
 
 function isHttpUrl(url) {
   try {
     const parsed = new URL(url || "");
     return ["http:", "https:"].includes(parsed.protocol);
+  } catch (_) {
+    return false;
+  }
+}
+
+function sameSiteUrl(left, right) {
+  try {
+    return sameSiteHost(new URL(left).hostname, new URL(right).hostname);
   } catch (_) {
     return false;
   }
@@ -360,3 +442,117 @@ async function postPickerEvent(event) {
     clearTimeout(timeout);
   }
 }
+
+function startExecutorPolling() {
+  if (executorPollTimer) return;
+  executorPollTimer = setTimeout(pollExecutorJob, 50);
+}
+
+function scheduleExecutorPoll(delayMs) {
+  if (executorPollTimer) clearTimeout(executorPollTimer);
+  executorPollTimer = setTimeout(pollExecutorJob, delayMs);
+}
+
+async function pollExecutorJob() {
+  executorPollTimer = null;
+  if (executorPollBusy) {
+    scheduleExecutorPoll(EXECUTOR_POLL_IDLE_MS);
+    return;
+  }
+  executorPollBusy = true;
+  let nextDelay = EXECUTOR_POLL_IDLE_MS;
+  try {
+    const response = await fetch(`${EXECUTOR_JOBS_URL}?source=picker-extension&version=${encodeURIComponent(chrome.runtime.getManifest().version)}`, {
+      cache: "no-store"
+    });
+    const body = await response.json().catch(() => ({}));
+    const job = body?.job;
+    if (job?.id) {
+      nextDelay = EXECUTOR_POLL_BUSY_MS;
+      await completeExecutorJob(job, await executeExecutorJob(job));
+    }
+  } catch (_) {
+    nextDelay = EXECUTOR_POLL_IDLE_MS * 2;
+  } finally {
+    executorPollBusy = false;
+    scheduleExecutorPoll(nextDelay);
+  }
+}
+
+async function completeExecutorJob(job, result) {
+  await fetch(`${EXECUTOR_JOBS_URL}/${encodeURIComponent(job.id)}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(result)
+  }).catch(() => {});
+}
+
+async function executeExecutorJob(job) {
+  try {
+    const tab = await resolveExecutorTab(job);
+    await ensureContentScript(tab.id);
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: "WEBOPS_EXECUTE",
+      job
+    });
+    if (!response?.ok) {
+      return { ok: false, error: response?.error || { message: "extension_executor_failed" } };
+    }
+    return {
+      ok: true,
+      result: {
+        ...(response.result ?? {}),
+        via: "chrome-extension-executor",
+        tab: compactTab(tab)
+      }
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        message: error?.message || String(error),
+        reason: "front_chrome_executor_action_failed"
+      }
+    };
+  }
+}
+
+async function resolveExecutorTab(job) {
+  const active = await getActiveTab();
+  if (tabMatchesExecutorJob(active, job)) return active;
+
+  const tabs = await chrome.tabs.query({});
+  const candidates = tabs
+    .filter((tab) => tabMatchesExecutorJob(tab, job))
+    .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+  if (candidates[0]?.id) return candidates[0];
+
+  if (active?.id && isHttpUrl(active.url)) return active;
+  throw new Error("No controllable Chrome tab found for the WebOps action");
+}
+
+function tabMatchesExecutorJob(tab, job) {
+  if (!tab?.id || !isHttpUrl(tab.url)) return false;
+  const targetUrl = job.currentUrl || job.params?.url || "";
+  if (!targetUrl || !isHttpUrl(targetUrl)) return true;
+  try {
+    const left = new URL(tab.url);
+    const right = new URL(targetUrl);
+    return sameSiteHost(left.hostname, right.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+function sameSiteHost(left, right) {
+  const l = String(left || "").replace(/^www\./, "");
+  const r = String(right || "").replace(/^www\./, "");
+  return l === r || l.endsWith(`.${r}`) || r.endsWith(`.${l}`) || siteKey(l) === siteKey(r);
+}
+
+function siteKey(hostname) {
+  const parts = String(hostname || "").split(".").filter(Boolean);
+  return parts.slice(-2).join(".");
+}
+
+startExecutorPolling();

@@ -10,7 +10,7 @@ Returns service health.
 
 ### `GET /api/runtime`
 
-Returns queue state, data directory, supported run modes, and supported operation branch modes.
+Returns queue state, data directory, supported run modes, supported operation branch modes, and extension-executor status.
 
 ### `GET /api/audit`
 
@@ -97,6 +97,42 @@ Request:
     "text": "",
     "labelText": "",
     "accessibleName": "搜索"
+  }
+}
+```
+
+## Chrome Extension Executor
+
+The bundled Chrome extension also acts as the executor for already-open front Chrome profiles. When a Chrome profile is locked by an ordinary browser session, Studio can hand off the first `goto` to the visible browser and then dispatch `fill`, `click`, `waitFor`, and extraction jobs through the extension.
+
+After editing files in `apps/picker-extension`, reload the unpacked `WebOps Forge Picker` extension in `chrome://extensions` before testing front Chrome execution.
+
+### `GET /api/extension-executor/status`
+
+Returns pending/active executor jobs and the last extension poll timestamp.
+
+### `GET /api/extension-executor/jobs`
+
+Used by the extension to claim the next pending executor job.
+
+Query:
+
+- `source`: caller label. The bundled extension sends `picker-extension`.
+- `version`: extension version.
+
+### `POST /api/extension-executor/jobs/:id/complete`
+
+Used by the extension to return a job result.
+
+Request:
+
+```json
+{
+  "ok": true,
+  "result": {
+    "via": "chrome-extension-executor",
+    "selector": "input[data-e2e=\"searchbar-input\"]",
+    "actualValue": "金枪大叔"
   }
 }
 ```

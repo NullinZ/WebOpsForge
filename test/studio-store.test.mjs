@@ -57,6 +57,9 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
     await store.init();
     const profiles = await store.listProfiles();
     assert.ok(profiles.some((profile) => profile.id === "dry-run-demo"));
+    const localProfile = profiles.find((profile) => profile.id === "local-chromium");
+    assert.equal(localProfile.profileDir, path.join(dir, "browser-profiles", "local-chromium"));
+    assert.equal(localProfile.browserChannel, "chrome");
     const seededRegistry = await store.getRegistry();
     assert.ok(seededRegistry.sites.some((site) => site.id === "example-marketplace"));
     assert.ok(seededRegistry.operations.some((operation) => operation.id === "example-search-suppliers"));
@@ -380,7 +383,7 @@ test("run queue can explicitly hand goto-only Chrome profile debug runs to the f
   }
 });
 
-test("run queue hands locked Chrome profiles to the front browser before executor-only steps", async () => {
+test("run queue marks locked Chrome profiles as front Chrome blocked when no executor is available", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-locked-chrome-handoff-run-"));
   try {
     const profileDir = path.join(dir, "chrome");
@@ -419,6 +422,7 @@ test("run queue hands locked Chrome profiles to the front browser before executo
     const calls = [];
     const queue = createRunQueue({
       store,
+      chromeNativeExecutor: null,
       chromeHandoffOpener: async (command, args, options) => {
         calls.push({ command, args, options });
       }
@@ -426,7 +430,7 @@ test("run queue hands locked Chrome profiles to the front browser before executo
     queue.enqueue(run.id);
     const completed = await waitForRun(store, run.id);
 
-    assert.equal(completed.status, "failed");
+    assert.equal(completed.status, "blocked");
     assert.equal(calls.length, 1);
     assert.equal(calls[0].command, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
     assert.deepEqual(calls[0].args, [
@@ -434,11 +438,83 @@ test("run queue hands locked Chrome profiles to the front browser before executo
       "https://douyin.com/"
     ]);
     assert.notEqual(completed.error.code, "PROFILE_BUSY");
-    assert.equal(completed.error.details.reason, "chrome_profile_handoff_unsupported_action");
+    assert.equal(completed.error.details.reason, "front_chrome_uncontrolled");
+    assert.equal(completed.error.details.previousReason, "chrome_profile_handoff_unsupported_action");
+    assert.equal(completed.error.details.blockedState, "front_chrome_uncontrolled");
     assert.equal(completed.error.details.action, "fill");
     assert.equal(completed.error.details.currentUrl, "https://douyin.com/");
     const events = await store.readRunEvents(run.id);
     assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "open" && event.result?.handoff === true && event.result?.handoffMethod === "browser-executable"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run queue completes locked Chrome profile steps through the extension executor", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-locked-chrome-executor-run-"));
+  try {
+    const profileDir = path.join(dir, "chrome");
+    await mkdir(profileDir, { recursive: true });
+    await symlink(`Host-${process.pid}`, path.join(profileDir, "SingletonLock"));
+    const store = new StudioStore({ dir: path.join(dir, "store") });
+    await store.init();
+    const workflow = await store.saveWorkflow({
+      id: "locked-chrome-executor-fixture",
+      name: "Locked Chrome executor fixture",
+      workflow: defineWorkflow({
+        name: "locked-chrome-executor-fixture",
+        steps: [
+          { id: "open", action: "goto", url: "https://douyin.com" },
+          { id: "fill", action: "fill", selector: "#q", value: "{{input.query}}" }
+        ]
+      })
+    });
+    const profile = await store.saveProfile({
+      id: "chrome-profile-2",
+      name: "Chrome Profile 2",
+      mode: "playwright",
+      browserType: "chromium",
+      browserChannel: "chrome",
+      profileDir,
+      profileDirectory: "Profile 2",
+      status: "ready"
+    });
+    const run = await store.createRun({
+      workflowId: workflow.id,
+      mode: "playwright",
+      profileId: profile.id,
+      input: { query: "storage case" },
+      driverConfig: { humanTiming: false }
+    });
+    const calls = [];
+    const executorCalls = [];
+    const queue = createRunQueue({
+      store,
+      chromeHandoffOpener: async (command, args, options) => {
+        calls.push({ command, args, options });
+      },
+      chromeExtensionExecutor: {
+        async run(payload, options) {
+          executorCalls.push({ payload, options });
+          return {
+            filled: true,
+            value: payload.params.value,
+            actualValue: payload.params.value,
+            target: { selector: payload.params.selector, count: 1, visibleCount: 1 }
+          };
+        }
+      }
+    });
+    queue.enqueue(run.id);
+    const completed = await waitForRun(store, run.id);
+
+    assert.equal(completed.status, "completed");
+    assert.equal(calls.length, 1);
+    assert.equal(executorCalls.length, 1);
+    assert.equal(executorCalls[0].payload.action, "fill");
+    assert.equal(executorCalls[0].payload.params.value, "storage case");
+    const events = await store.readRunEvents(run.id);
+    assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "fill" && event.result?.via === "chrome-extension-executor"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

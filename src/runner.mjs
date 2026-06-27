@@ -54,9 +54,26 @@ export class WebOpsRunner {
     assertNotCancelled(state);
     const startedAt = this.clock().toISOString();
     const scope = { input: state.input, context: state.context, outputs: state.outputs };
-    const templatedStep = selectActiveOperationBranch(step, scope, state);
-    assertTemplateReady(templatedStep, scope);
-    const resolved = resolveTemplates(templatedStep, scope);
+    let templatedStep;
+    let resolved;
+    try {
+      templatedStep = selectActiveOperationBranch(step, scope, state);
+      assertTemplateReady(templatedStep, scope);
+      resolved = resolveTemplates(templatedStep, scope);
+    } catch (error) {
+      const failedStep = templatedStep ?? step;
+      await this.evidenceStore.append({
+        type: failedStep.optional ? "step.skipped_after_error" : "step.failed",
+        runId: state.runId,
+        stepId: failedStep.id ?? step.id,
+        action: failedStep.action ?? step.action,
+        details: stepEvidenceDetails(failedStep, failedStep, scope),
+        error: serializeError(error),
+        failedAt: this.clock().toISOString()
+      });
+      if (failedStep.optional) return { skipped: true, error: error.message };
+      throw error;
+    }
     const timeoutMs = resolved.timeoutMs ?? workflow.defaults.timeoutMs;
 
     await this.policy?.beforeStep?.({ step: resolved, state });
@@ -65,6 +82,7 @@ export class WebOpsRunner {
       runId: state.runId,
       stepId: resolved.id,
       action: resolved.action,
+      details: stepEvidenceDetails(resolved, templatedStep, scope),
       startedAt
     });
     await this.rateLimiter.wait({
@@ -326,6 +344,33 @@ function applyStepOutput(step, result, state) {
     const name = step.name ?? step.output ?? step.outputName;
     state.outputs[name] = result.value ?? result.result?.value ?? result;
   }
+}
+
+function stepEvidenceDetails(step, templatedStep, scope) {
+  const details = {};
+  if (step.selector) details.selector = step.selector;
+  if (step.url) details.url = step.url;
+  if (step.key) details.key = step.key;
+  if (step.name) details.name = step.name;
+  if (Object.hasOwn(step, "value")) {
+    details.value = step.redact ? "[redacted]" : step.value;
+  }
+  const templateValues = collectTemplateValues(templatedStep, scope, Boolean(step.redact));
+  if (templateValues.length) details.templateValues = templateValues;
+  return details;
+}
+
+function collectTemplateValues(value, scope, redact = false) {
+  const templatePattern = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+  const paths = new Set();
+  JSON.stringify(value ?? {}).replace(templatePattern, (_match, path) => {
+    paths.add(path);
+    return "";
+  });
+  return [...paths].sort().map((path) => ({
+    path,
+    value: redact ? "[redacted]" : getPath(scope, path)
+  }));
 }
 
 function assertNotCancelled(state) {
