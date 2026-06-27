@@ -72,6 +72,12 @@ button.primary {
   color: #fff;
 }
 
+button.primary:disabled {
+  border-color: #d7dee7;
+  background: #eef2f6;
+  color: #8a96a3;
+}
+
 .stop-button {
   width: 100%;
   margin-top: 8px;
@@ -82,6 +88,12 @@ button.primary {
 
 .stop-button:not(:disabled):hover {
   background: #ffe3e3;
+}
+
+.stop-button:disabled {
+  border-color: #d7dee7;
+  background: #f3f5f8;
+  color: #8a96a3;
 }
 
 button:disabled {

@@ -81,6 +81,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message.type === "CLOSE_SIDE_PANEL") {
+      sendResponse(await closeCurrentSidePanel());
+      return;
+    }
+
     if (message.type === "START_PICK") {
       const session = await fetchPickerSession({ force: true });
       const tab = await resolvePickerTargetTab(session);
@@ -134,7 +139,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await clearStudioPickerSession(session.id, "posted");
         await refreshAllTabsSidePanels();
       }
-      await chrome.storage.local.set({ latestPickerPost: posted });
+      await chrome.storage.local.set({
+        latestPickerPost: {
+          ...posted,
+          completedAt: Date.now()
+        }
+      });
       sendResponse({ ok: true, posted });
       return;
     }
@@ -193,12 +203,22 @@ async function updateSidePanelForTab(tab, { forceSessionRefresh = false } = {}) 
 }
 
 async function closeSidePanelForTab(tab) {
-  if (typeof chrome.sidePanel.close !== "function") return;
+  if (!tab?.id || typeof chrome.sidePanel.close !== "function") return false;
   try {
     await chrome.sidePanel.close({ tabId: tab.id });
+    return true;
   } catch (_) {
     // The panel may already be closed or only a global panel may exist.
+    return false;
   }
+}
+
+async function closeCurrentSidePanel() {
+  const tab = activePick?.tabId
+    ? await chrome.tabs.get(activePick.tabId).catch(() => null)
+    : await getActiveTab();
+  const closed = await closeSidePanelForTab(tab);
+  return { ok: true, closed };
 }
 
 async function getActiveTab() {

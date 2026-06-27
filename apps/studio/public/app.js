@@ -293,6 +293,8 @@ const I18N = {
     dataDir: "data: {path}",
     defaultRun: "Default Run",
     delete: "Delete",
+    deleteNode: "Delete Node",
+    deleteNodeConfirm: "Delete selected node? If it is an operation node, its child branches will be deleted too.",
     debugRunKind: "debug",
     debugRunsCleared: "Cleared {count} debug logs",
     definition: "Workflow JSON Source",
@@ -357,6 +359,7 @@ const I18N = {
     formalRunKind: "formal",
     noWorkflowSelected: "No workflow selected",
     nodeAdded: "Node added. Edit it to define the next step.",
+    nodeDeleted: "Node deleted.",
     noProfile: "no profile",
     none: "none",
     openLoginWindow: "Open Login Window",
@@ -375,7 +378,7 @@ const I18N = {
     page: "Page",
     pageRegistry: "Page Registry",
     pages: "Pages",
-    pickNode: "Pick Node",
+    pickNode: "Add Pick Node",
     pickerNoTargetUrl: "Picker node added, but no target URL was found. Add or select a goto step first.",
     pickerTargetActive: "Target: {url}",
     pickerWaiting: "Picker node added. Open the Chrome picker when you are on the page to pick.",
@@ -489,6 +492,8 @@ const I18N = {
     dataDir: "数据目录：{path}",
     defaultRun: "默认运行",
     delete: "删除",
+    deleteNode: "删除节点",
+    deleteNodeConfirm: "确认删除选中的节点吗？如果它是业务操作节点，会一并删除子分支。",
     debugRunKind: "调试",
     debugRunsCleared: "已清空 {count} 条调试日志",
     definition: "工作流 JSON 源码",
@@ -553,6 +558,7 @@ const I18N = {
     formalRunKind: "正式",
     noWorkflowSelected: "未选择工作流",
     nodeAdded: "节点已新增，请编辑它来定义下一步。",
+    nodeDeleted: "节点已删除。",
     noProfile: "不使用 Profile",
     none: "无",
     openLoginWindow: "打开登录窗口",
@@ -571,7 +577,7 @@ const I18N = {
     page: "页面",
     pageRegistry: "页面注册",
     pages: "页面",
-    pickNode: "拾取节点",
+    pickNode: "新增拾取节点",
     pickerNoTargetUrl: "已新增拾取节点，但没有找到目标网址。请先添加或选中 goto 节点。",
     pickerTargetActive: "目标页：{url}",
     pickerWaiting: "已新增拾取节点，切到要拾取的网页后手动打开 Chrome 拾取器。",
@@ -1102,6 +1108,7 @@ const elements = {
   graphLayoutButtons: document.querySelectorAll("[data-graph-layout]"),
   graphNodeEditor: document.querySelector("#graphNodeEditor"),
   nodeEditorKind: document.querySelector("#nodeEditorKind"),
+  deleteGraphNodeButton: document.querySelector("#deleteGraphNodeButton"),
   nodeEditorEmpty: document.querySelector("#nodeEditorEmpty"),
   nodeEditorForm: document.querySelector("#nodeEditorForm"),
   nodeEditorId: document.querySelector("#nodeEditorId"),
@@ -1194,6 +1201,7 @@ document.querySelector("#saveWorkflowButton").addEventListener("click", () => sa
 document.querySelector("#validateWorkflowButton").addEventListener("click", () => validateSelectedWorkflow());
 document.querySelector("#newWorkflowButton").addEventListener("click", () => createBlankWorkflow());
 document.querySelector("#addGraphNodeButton").addEventListener("click", () => addGraphNode());
+elements.deleteGraphNodeButton.addEventListener("click", () => deleteSelectedGraphNode());
 document.querySelector("#addPickerNodeButton").addEventListener("click", (event) => {
   event.stopPropagation();
   setPickerPanelExpanded(true);
@@ -1292,6 +1300,13 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   closeActionPickers();
   closeFieldHelps();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Delete" && event.key !== "Backspace") return;
+  if (isTextEditingTarget(event.target)) return;
+  if (!state.selectedGraphNodeId) return;
+  event.preventDefault();
+  deleteSelectedGraphNode();
 });
 updateGraphLayoutButtons();
 updateGraphZoomLabel();
@@ -1936,6 +1951,7 @@ function renderGraphNodeEditor() {
   const hasSelection = Boolean(match);
   elements.nodeEditorEmpty.hidden = hasSelection;
   elements.nodeEditorForm.hidden = !hasSelection;
+  elements.deleteGraphNodeButton.disabled = !hasSelection;
 
   if (!match) {
     elements.nodeEditorKind.textContent = t("nodeEditor");
@@ -2153,6 +2169,24 @@ function addGraphNode() {
   showToast(t("nodeAdded"));
 }
 
+function deleteSelectedGraphNode() {
+  if (!state.selectedGraphNodeId) return;
+  const workflow = readWorkflowDraft();
+  if (!workflow || !Array.isArray(workflow.steps)) return;
+  const match = findWorkflowNode(workflow, state.selectedGraphNodeId);
+  if (!match) return;
+  if (!window.confirm(t("deleteNodeConfirm"))) return;
+
+  const deletedIds = collectDeletedGraphNodeIds(match.step);
+  const nextSelectedId = removeGraphNodeStep(workflow, match);
+  cleanupDeletedGraphNodeState(deletedIds);
+  state.selectedGraphNodeId = nextSelectedId;
+  commitWorkflowDraft(workflow);
+  if (state.selectedWorkflowId) saveGraphPositions(state.selectedWorkflowId, state.graphPositions);
+  renderGraph();
+  showToast(t("nodeDeleted"));
+}
+
 async function addPickerGraphNode() {
   const workflow = readWorkflowDraft();
   if (!workflow || !Array.isArray(workflow.steps)) return;
@@ -2228,6 +2262,74 @@ function insertGraphNodeStep(workflow, match, newStep) {
 
   const insertAt = match ? match.topIndex + 1 : workflow.steps.length;
   workflow.steps.splice(insertAt, 0, newStep);
+}
+
+function removeGraphNodeStep(workflow, match) {
+  if (match.kind === "browser") {
+    const operation = workflow.steps[match.topIndex];
+    const branch = Array.isArray(operation?.browserSteps) ? operation.browserSteps : [];
+    branch.splice(match.childIndex, 1);
+    return branch[match.childIndex]?.id ?? branch[match.childIndex - 1]?.id ?? operation?.id ?? null;
+  }
+
+  if (match.kind === "api") {
+    const operation = workflow.steps[match.topIndex];
+    if (operation?.api) delete operation.api;
+    return operation?.id ?? null;
+  }
+
+  workflow.steps.splice(match.topIndex, 1);
+  return workflow.steps[match.topIndex]?.id ?? workflow.steps[match.topIndex - 1]?.id ?? null;
+}
+
+function collectDeletedGraphNodeIds(step) {
+  const ids = [];
+  collectWorkflowStepId(step, {
+    add(id) {
+      ids.push(id);
+    }
+  });
+  return ids;
+}
+
+function cleanupDeletedGraphNodeState(stepIds) {
+  for (const stepId of stepIds) {
+    delete state.graphPositions[stepId];
+  }
+  if (stepIds.includes(state.pendingPickerNodeId)) {
+    state.pendingPickerNodeId = null;
+    state.pendingPickerStartedAt = null;
+    void clearPickerSession("node_deleted");
+  }
+  removeOperationModeEntries(stepIds);
+}
+
+function removeOperationModeEntries(stepIds) {
+  if (!stepIds.length) return;
+  let modes;
+  try {
+    modes = JSON.parse(elements.operationModesJson.value || "{}");
+  } catch {
+    return;
+  }
+  if (!modes || typeof modes !== "object" || Array.isArray(modes)) return;
+
+  let changed = false;
+  for (const stepId of stepIds) {
+    if (!Object.hasOwn(modes, stepId)) continue;
+    delete modes[stepId];
+    changed = true;
+  }
+  if (!changed) return;
+
+  elements.operationModesJson.value = formatJson(modes);
+  try {
+    const context = parseJson(elements.runContextJson.value, "Context");
+    context.operationModes = modes;
+    elements.runContextJson.value = formatJson(context);
+  } catch {
+    // Run context JSON can be repaired separately; node deletion should still proceed.
+  }
 }
 
 function uniqueWorkflowStepId(workflow, base, { excludeId = null } = {}) {
@@ -5062,6 +5164,12 @@ function translateStatusOptions(select) {
 function selectOptionLabel(select, value) {
   if (select === elements.profileLoginState || select === elements.profileStatus || select === elements.registryItemStatus) return statusLabel(value);
   return String(value ?? "");
+}
+
+function isTextEditingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
 function t(key, params = {}) {

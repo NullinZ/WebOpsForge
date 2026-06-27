@@ -1372,6 +1372,21 @@ h2 {
   margin-top: 0;
 }
 
+.node-editor-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-editor-heading h2 {
+  margin: 0;
+}
+
+.node-editor #deleteGraphNodeButton {
+  justify-self: end;
+}
+
 .node-editor-empty {
   color: var(--muted);
   font-size: 13px;

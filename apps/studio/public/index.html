@@ -154,8 +154,11 @@
             </div>
             <div class="node-editor" id="graphNodeEditor">
               <div class="section-head compact">
-                <h2 data-i18n="nodeEditor">Node Editor</h2>
-                <span class="pill muted" id="nodeEditorKind">Node</span>
+                <div class="node-editor-heading">
+                  <h2 data-i18n="nodeEditor">Node Editor</h2>
+                  <span class="pill muted" id="nodeEditorKind">Node</span>
+                </div>
+                <button class="secondary danger-action compact-button" id="deleteGraphNodeButton" type="button" data-i18n="deleteNode">Delete Node</button>
               </div>
               <div class="node-editor-empty" id="nodeEditorEmpty" data-i18n="nodeEditorEmpty">Select a node to edit it.</div>
               <div class="node-editor-form" id="nodeEditorForm" hidden>
