@@ -271,6 +271,12 @@ const I18N = {
     baseUrl: "Base URL",
     builder: "Builder",
     browserChannel: "Browser Channel",
+    proxyMode: "Network",
+    proxyModeSystem: "System",
+    proxyModeDirect: "Direct",
+    proxyModeCustom: "Custom proxy",
+    proxyServer: "Proxy Server",
+    proxyBypass: "Proxy Bypass",
     buildWorkflow: "Build Workflow",
     browserStartup: "Browser startup",
     cancel: "Cancel",
@@ -354,6 +360,11 @@ const I18N = {
     noProfile: "no profile",
     none: "none",
     openLoginWindow: "Open Login Window",
+    releaseProfileBrowser: "Release Browser",
+    releaseProfileBrowserConfirm: "Close the browser process currently using this profile? WebOps Forge will only signal a PID whose command line points to this profile directory.",
+    profileBrowserReleaseNoLock: "No browser process is currently locking this profile.",
+    profileBrowserReleaseRequested: "Requested browser release.",
+    profileBrowserReleaseUnverified: "The locking process could not be verified as this profile, so it was not closed.",
     operationModes: "Operation Modes",
     operationBuilder: "Operation Builder",
     operationBuilderNote: "Create a readable page operation with list, detail, and media outputs.",
@@ -456,6 +467,12 @@ const I18N = {
     baseUrl: "基础地址",
     builder: "Builder",
     browserChannel: "浏览器通道",
+    proxyMode: "网络/代理",
+    proxyModeSystem: "沿用系统",
+    proxyModeDirect: "强制直连",
+    proxyModeCustom: "指定代理",
+    proxyServer: "代理地址",
+    proxyBypass: "绕过列表",
     buildWorkflow: "生成工作流",
     browserStartup: "浏览器启动",
     cancel: "取消",
@@ -539,6 +556,11 @@ const I18N = {
     noProfile: "不使用 Profile",
     none: "无",
     openLoginWindow: "打开登录窗口",
+    releaseProfileBrowser: "释放浏览器",
+    releaseProfileBrowserConfirm: "确认关闭当前占用这个 Profile 的浏览器进程？WebOps Forge 只会关闭命令行指向当前 profileDir 的 PID。",
+    profileBrowserReleaseNoLock: "当前没有浏览器进程占用这个 Profile。",
+    profileBrowserReleaseRequested: "已请求释放浏览器。",
+    profileBrowserReleaseUnverified: "无法确认占用进程属于这个 Profile，已取消关闭。",
     operationModes: "动作执行方式",
     operationBuilder: "操作生成器",
     operationBuilderNote: "创建可读取列表、详情和图片视频输出的页面操作。",
@@ -710,12 +732,12 @@ const RECOVERY_HINT_LABELS = {
   en: {
     front_chrome_javascript_disabled: "In Chrome, enable View > Developer > Allow JavaScript from Apple Events, then rerun.",
     front_chrome_uncontrolled: "Reload or enable the WebOps Forge Picker extension, enable Chrome Apple Events JavaScript, or switch to an isolated Playwright profile.",
-    profile_busy: "This Chrome profile is already open outside WebOps Forge. Use CDP/extension control, or quit Chrome and let WebOps Forge launch this profile."
+    profile_busy: "This profile is already open. If it is an old WebOps-controlled login window, release it from Profile Details; otherwise quit the external Chrome window or reconnect through CDP/extension control."
   },
   zh: {
     front_chrome_javascript_disabled: "在 Chrome 菜单打开「查看 > 开发者 > 允许 Apple 事件中的 JavaScript」，然后重新运行。",
     front_chrome_uncontrolled: "请刷新/启用 WebOps Forge Picker 扩展，或打开 Chrome 的「允许 Apple 事件中的 JavaScript」，也可以切换到 Local Chromium / 独立 Playwright Profile。",
-    profile_busy: "这个 Profile 正被普通 Chrome 使用。要按此 Profile 自动执行，需要接入 CDP/扩展执行器；或先退出 Chrome，让 WebOps Forge 启动此 Profile。"
+    profile_busy: "这个 Profile 已被浏览器窗口占用。如果是旧的 WebOps 登录窗口，在 Profile 详情点“释放浏览器”；如果是你自己开的普通 Chrome，则先退出那扇 Chrome 或接入 CDP/扩展控制。"
   }
 };
 
@@ -994,6 +1016,18 @@ const FIELD_HELP = {
     zh: { title: "浏览器通道", body: "运行时使用的浏览器通道，例如 chrome、msedge。留空则使用 Playwright 默认 Chromium。" },
     en: { title: "Browser channel", body: "Browser channel used at runtime, such as chrome or msedge. Empty uses Playwright's default Chromium." }
   },
+  profileProxyMode: {
+    zh: { title: "网络/代理", body: "沿用系统会使用当前系统网络；强制直连会禁用浏览器代理；指定代理会按下面代理地址启动此独立 Chrome。" },
+    en: { title: "Network/proxy", body: "System uses the current OS network, direct disables browser proxy, and custom starts this Chrome with the proxy server below." }
+  },
+  profileProxyServer: {
+    zh: { title: "代理地址", body: "用于指定代理模式，例如 socks5://127.0.0.1:29758 或 http://127.0.0.1:29757。" },
+    en: { title: "Proxy server", body: "Used in custom proxy mode, such as socks5://127.0.0.1:29758 or http://127.0.0.1:29757." }
+  },
+  profileProxyBypass: {
+    zh: { title: "绕过列表", body: "这些地址不走代理，默认绕过本机地址。" },
+    en: { title: "Proxy bypass", body: "Addresses that bypass the proxy; localhost is bypassed by default." }
+  },
   profileCheckUrl: {
     zh: { title: "会话检查 URL", body: "检查登录态时打开的页面。通常是平台首页或后台页。" },
     en: { title: "Session check URL", body: "Page opened to check login state. Usually a platform home or workspace page." }
@@ -1107,7 +1141,11 @@ const elements = {
   profileDir: document.querySelector("#profileDir"),
   profileDirectory: document.querySelector("#profileDirectory"),
   profileBrowserChannel: document.querySelector("#profileBrowserChannel"),
+  profileProxyMode: document.querySelector("#profileProxyMode"),
+  profileProxyServer: document.querySelector("#profileProxyServer"),
+  profileProxyBypass: document.querySelector("#profileProxyBypass"),
   openProfileButton: document.querySelector("#openProfileButton"),
+  releaseProfileBrowserButton: document.querySelector("#releaseProfileBrowserButton"),
   localProfileSelect: document.querySelector("#localProfileSelect"),
   profileCheckUrl: document.querySelector("#profileCheckUrl"),
   profileAccountSelector: document.querySelector("#profileAccountSelector"),
@@ -1195,6 +1233,7 @@ document.addEventListener("click", (event) => {
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
 elements.openProfileButton.addEventListener("click", () => openSelectedProfileLoginWindow());
+elements.releaseProfileBrowserButton.addEventListener("click", () => releaseSelectedProfileBrowser());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
 document.querySelector("#saveRunConfigButton").addEventListener("click", () => saveSelectedWorkflow());
 elements.editRunProfileButton.addEventListener("click", () => editRunProfileFromRunConfig());
@@ -3504,6 +3543,9 @@ function selectProfile(id, { focusPanel = false } = {}) {
   elements.profileDir.value = profile.profileDir ?? "";
   elements.profileDirectory.value = profile.profileDirectory ?? "";
   elements.profileBrowserChannel.value = profile.browserChannel ?? "";
+  elements.profileProxyMode.value = profile.network?.proxyMode ?? "system";
+  elements.profileProxyServer.value = profile.network?.proxyServer ?? "";
+  elements.profileProxyBypass.value = profile.network?.proxyBypass ?? "127.0.0.1,::1,localhost";
   elements.profileCheckUrl.value = profile.sessionCheck?.url ?? "";
   elements.profileAccountSelector.value = profile.sessionCheck?.accountSelector ?? "";
   elements.profileRate.value = profile.rateLimit?.maxPerMinute ?? "";
@@ -4428,6 +4470,7 @@ async function saveSelectedProfile() {
       profileDir: elements.profileDir.value.trim(),
       profileDirectory: elements.profileDirectory.value.trim(),
       browserChannel: elements.profileBrowserChannel.value.trim(),
+      network: profileNetworkFromForm(),
       sessionCheck: profileSessionCheckFromForm(),
       rateLimit: {
         maxPerMinute: elements.profileRate.value ? Number(elements.profileRate.value) : null
@@ -4557,6 +4600,7 @@ async function checkSelectedProfile() {
         profileDir: elements.profileDir.value.trim(),
         profileDirectory: elements.profileDirectory.value.trim(),
         browserChannel: elements.profileBrowserChannel.value.trim(),
+        network: profileNetworkFromForm(),
         ...profileSessionCheckFromForm()
       }
     });
@@ -4585,12 +4629,38 @@ async function openSelectedProfileLoginWindow() {
         profileDir: elements.profileDir.value.trim(),
         profileDirectory: elements.profileDirectory.value.trim(),
         browserChannel: elements.profileBrowserChannel.value.trim(),
+        network: profileNetworkFromForm(),
         ...sessionCheck
       }
     });
     await loadAudit();
     render();
     showToast(t("loginWindowOpened"));
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function releaseSelectedProfileBrowser() {
+  try {
+    const id = elements.profileId.value.trim();
+    if (!id) throw new Error(t("profileIdRequired"));
+    if (!window.confirm(t("releaseProfileBrowserConfirm"))) return;
+    const data = await api(`/api/profiles/${encodeURIComponent(id)}/release-browser`, {
+      method: "POST",
+      body: { force: true }
+    });
+    await Promise.all([loadProfiles(), loadAudit()]);
+    selectProfile(data.profile.id);
+    render();
+    const release = data.result?.release ?? {};
+    if (release.reason === "no_active_lock" || release.reason === "missing_profile_dir") {
+      showToast(t("profileBrowserReleaseNoLock"));
+    } else if (release.reason === "owner_not_verified") {
+      showToast(t("profileBrowserReleaseUnverified"));
+    } else {
+      showToast(t("profileBrowserReleaseRequested"));
+    }
   } catch (error) {
     showToast(error.message);
   }
@@ -4886,6 +4956,7 @@ function createBlankProfile() {
     profileDir: "",
     profileDirectory: "",
     browserChannel: "",
+    network: { proxyMode: "system", proxyServer: "", proxyBypass: "127.0.0.1,::1,localhost" },
     sessionCheck: {
       platform: "",
       url: "",
@@ -5110,7 +5181,8 @@ function localProfileSaveBody(localProfile, { id, includeRuntimeDefaults, existi
     profileDirectory: localProfile.profileDirectory ?? "",
     browserType: localProfile.browserType ?? "chromium",
     browserChannel: localProfile.browserChannel ?? "",
-    headless: false
+    headless: false,
+    network: existingProfile?.network ?? { proxyMode: "system", proxyServer: "", proxyBypass: "127.0.0.1,::1,localhost" }
   };
   if (includeRuntimeDefaults) {
     body.status = "ready";
@@ -5231,6 +5303,14 @@ function profileSessionCheckFromForm() {
     accountSelector: elements.profileAccountSelector.value.trim(),
     loggedOutSelector: "",
     timeoutMs: 10000
+  };
+}
+
+function profileNetworkFromForm() {
+  return {
+    proxyMode: elements.profileProxyMode.value || "system",
+    proxyServer: elements.profileProxyServer.value.trim(),
+    proxyBypass: elements.profileProxyBypass.value.trim() || "127.0.0.1,::1,localhost"
   };
 }
 

@@ -1,4 +1,5 @@
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
+import { applyProfileNetworkToLaunchOptions, normalizeProfileNetwork } from "./profile-network.mjs";
 
 const DEFAULT_LOGIN_URL = "about:blank";
 
@@ -35,6 +36,7 @@ export function createProfileBrowserSessionPool({ clock = () => new Date() } = {
         browserChannel: config.browserChannel,
         profileDir: config.profileDir,
         profileDirectory: config.profileDirectory,
+        network: config.network,
         url: targetUrl,
         openedAt: session.openedAt,
         lastUsedAt: session.lastUsedAt
@@ -90,6 +92,7 @@ export function createProfileBrowserSessionPool({ clock = () => new Date() } = {
       profileDir: config.profileDir,
       profileDirectory: config.profileDirectory || null,
       browserChannel: config.browserChannel || null,
+      launchOptions: applyProfileNetworkToLaunchOptions({}, config.network),
       headless: false
     });
     const now = clock().toISOString();
@@ -100,6 +103,7 @@ export function createProfileBrowserSessionPool({ clock = () => new Date() } = {
       profileDir: config.profileDir,
       profileDirectory: config.profileDirectory,
       browserChannel: config.browserChannel,
+      network: config.network,
       driver,
       openedAt: now,
       lastUsedAt: now,
@@ -131,6 +135,7 @@ function normalizeProfileConfig(profile, overrides = {}) {
     browserChannel: overrides.browserChannel ?? profile.browserChannel ?? "chrome",
     profileDir,
     profileDirectory: overrides.profileDirectory ?? profile.profileDirectory ?? "",
+    network: normalizeProfileNetwork(overrides, profile),
     timeoutMs: Number(overrides.timeoutMs ?? profile.sessionCheck?.timeoutMs ?? 10_000)
   };
 }
@@ -140,7 +145,10 @@ function sessionKey(config) {
     config.browserType,
     config.browserChannel,
     config.profileDir,
-    config.profileDirectory
+    config.profileDirectory,
+    config.network?.proxyMode,
+    config.network?.proxyServer,
+    config.network?.proxyBypass
   ].map((value) => String(value ?? "")).join("\n");
 }
 
@@ -155,7 +163,9 @@ function normalizeLoginUrl(url) {
 
 async function isSessionClosed(session) {
   try {
-    if (session.driver.page?.isClosed?.()) return true;
+    if (session.driver.page?.isClosed?.()) {
+      return !session.driver.context?.pages?.().some((item) => !item.isClosed?.());
+    }
     await session.driver.currentUrl?.();
     return false;
   } catch {
@@ -179,6 +189,7 @@ function sessionSummary(session) {
     profileDir: session.profileDir,
     profileDirectory: session.profileDirectory,
     browserChannel: session.browserChannel,
+    network: session.network,
     openedAt: session.openedAt,
     lastUsedAt: session.lastUsedAt
   };

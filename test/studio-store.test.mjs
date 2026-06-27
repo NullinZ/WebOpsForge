@@ -202,6 +202,35 @@ test("studio store manages profiles, cancellation, retry, and bundles", async ()
   }
 });
 
+test("studio store persists profile network settings", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-profile-network-"));
+  try {
+    const store = new StudioStore({ dir });
+    await store.init();
+    const profile = await store.saveProfile({
+      id: "proxy-profile",
+      name: "Proxy Profile",
+      mode: "playwright",
+      profileDir: path.join(dir, "browser-profile"),
+      browserChannel: "chrome",
+      network: {
+        proxyMode: "custom",
+        proxyServer: "socks5://127.0.0.1:29758",
+        proxyBypass: "127.0.0.1,localhost"
+      }
+    });
+
+    assert.deepEqual(profile.network, {
+      proxyMode: "custom",
+      proxyServer: "socks5://127.0.0.1:29758",
+      proxyBypass: "127.0.0.1,localhost"
+    });
+    assert.deepEqual((await store.getProfile("proxy-profile")).network, profile.network);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("discovers local browser profiles from Chrome user data", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-browser-profiles-"));
   try {
@@ -378,6 +407,82 @@ test("run queue can explicitly hand goto-only Chrome profile debug runs to the f
     ]);
     const events = await store.readRunEvents(run.id);
     assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "open" && event.result?.handoff === true && event.result?.handoffMethod === "browser-executable"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run queue reuses an already opened controlled profile browser session", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-controlled-profile-session-run-"));
+  try {
+    const store = new StudioStore({ dir });
+    await store.init();
+    const workflow = await store.saveWorkflow({
+      id: "controlled-profile-session-fixture",
+      name: "Controlled profile session fixture",
+      workflow: defineWorkflow({
+        name: "controlled-profile-session-fixture",
+        steps: [
+          { id: "open", action: "goto", url: "https://douyin.com" },
+          { id: "fill", action: "fill", selector: "#q", value: "{{input.query}}" }
+        ]
+      })
+    });
+    const profile = await store.saveProfile({
+      id: "local-chromium",
+      name: "Local Chromium",
+      mode: "playwright",
+      browserType: "chromium",
+      browserChannel: "chrome",
+      profileDir: path.join(dir, "browser-profile"),
+      profileDirectory: "",
+      status: "ready"
+    });
+    const run = await store.createRun({
+      workflowId: workflow.id,
+      mode: "playwright",
+      profileId: profile.id,
+      input: { query: "storage case" },
+      driverConfig: { humanTiming: false }
+    });
+    const driverCalls = [];
+    let sessionCalls = 0;
+    let handoffCalls = 0;
+    const queue = createRunQueue({
+      store,
+      chromeHandoffOpener: async () => {
+        handoffCalls += 1;
+      },
+      profileBrowserSessions: {
+        async getDriver({ profile: requestedProfile }) {
+          sessionCalls += 1;
+          assert.equal(requestedProfile.id, "local-chromium");
+          return {
+            kind: "playwright",
+            persistentProfileSession: true,
+            async goto(args) {
+              driverCalls.push({ action: "goto", ...args });
+              return { url: args.url };
+            },
+            async fill(args) {
+              driverCalls.push({ action: "fill", ...args });
+              return { filled: true };
+            },
+            async currentUrl() {
+              return "https://douyin.com";
+            },
+            async close() {}
+          };
+        }
+      }
+    });
+    queue.enqueue(run.id);
+    const completed = await waitForRun(store, run.id);
+
+    assert.equal(completed.status, "completed");
+    assert.equal(sessionCalls, 1);
+    assert.equal(handoffCalls, 0);
+    assert.deepEqual(driverCalls.map((item) => item.action), ["goto", "fill"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

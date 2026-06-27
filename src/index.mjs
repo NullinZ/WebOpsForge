@@ -12,6 +12,8 @@ export { classifyRunFailure, detectBlockedState } from "./blocked-state.mjs";
 export { StudioStore } from "./studio/store.mjs";
 export { createRunQueue } from "./studio/run-queue.mjs";
 export { createExtensionExecutor } from "./studio/extension-executor.mjs";
+export { detectActiveProfileLock, releaseProfileLockOwner, waitForProfileLockRelease } from "./studio/profile-locks.mjs";
+export { applyProfileNetworkToLaunchOptions, normalizeProfileNetwork, profileNetworkArgs } from "./studio/profile-network.mjs";
 export { createProfileBrowserSessionPool } from "./studio/profile-browser-session-pool.mjs";
 export { openProfileLoginWindow, probeProfileSession } from "./studio/profile-session.mjs";
 export { normalizePickerEvent, createTargetIdentityFromPickerEvent } from "./selector-identity.mjs";

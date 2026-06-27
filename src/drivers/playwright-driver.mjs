@@ -1,7 +1,6 @@
-import { readlink } from "node:fs/promises";
-import path from "node:path";
 import { BrowserActionError } from "../errors.mjs";
 import { normalizeApiResult } from "../api-client.mjs";
+import { detectActiveProfileLock } from "../studio/profile-locks.mjs";
 
 export async function createPlaywrightDriver({
   browserType = "chromium",
@@ -28,7 +27,7 @@ export async function createPlaywrightDriver({
     });
     const launchProfileDirectory = profileDirectory ?? profileDirectoryFromArgs(persistentLaunchOptions.args);
     const launchBrowserChannel = browserChannel ?? persistentLaunchOptions.channel;
-    const activeLock = await detectActiveProfileLock(profileDir);
+    const activeLock = await detectActiveProfileLock(profileDir, { inspectProcess: true });
     if (activeLock) {
       throw persistentProfileBusyError({
         profileDir,
@@ -109,6 +108,8 @@ function persistentProfileBusyError({
         browserChannel,
         lockPid: activeLock?.pid ?? null,
         lockTarget: activeLock?.target ?? null,
+        lockOwnerKind: activeLock?.owner?.kind ?? null,
+        lockOwnerVerified: activeLock?.owner?.ownsProfile ?? null,
         originalMessage
       }
     }
@@ -123,22 +124,6 @@ function profileDirectoryFromArgs(args) {
   if (!Array.isArray(args)) return null;
   const arg = args.find((item) => String(item).startsWith("--profile-directory="));
   return arg ? String(arg).slice("--profile-directory=".length) : null;
-}
-
-async function detectActiveProfileLock(profileDir) {
-  try {
-    const target = await readlink(path.join(profileDir, "SingletonLock"));
-    const pid = Number(String(target).match(/-(\d+)$/)?.[1]);
-    if (!Number.isInteger(pid) || pid <= 0) return null;
-    try {
-      process.kill(pid, 0);
-      return { pid, target };
-    } catch {
-      return null;
-    }
-  } catch {
-    return null;
-  }
 }
 
 function createDriverFromPage({ page, context = null, browser = null, ownsBrowser = false }) {

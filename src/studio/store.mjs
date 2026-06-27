@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createSampleWorkflowRecord } from "./sample-workflows.mjs";
+import { normalizeProfileNetwork } from "./profile-network.mjs";
 import { normalizeWorkflow } from "../workflow.mjs";
 import { normalizePickerEvent } from "../selector-identity.mjs";
 
@@ -168,6 +169,7 @@ export class StudioStore {
       browserType: record.browserType ?? existing?.browserType ?? "chromium",
       browserChannel: record.browserChannel ?? existing?.browserChannel ?? "",
       headless: Boolean(record.headless ?? existing?.headless ?? false),
+      network: normalizeProfileNetwork(record, existing),
       status,
       leasedRunId: status === "busy" ? record.leasedRunId ?? existing?.leasedRunId ?? null : record.leasedRunId ?? null,
       rateLimit: {
@@ -929,6 +931,7 @@ function createDefaultProfiles(clock = () => new Date(), { browserProfilesDir = 
       browserType: "chromium",
       browserChannel: "chrome",
       headless: false,
+      network: { proxyMode: "system", proxyServer: "", proxyBypass: "127.0.0.1,::1,localhost" },
       status: "ready",
       leasedRunId: null,
       rateLimit: { minDelayMs: 1000, maxDelayMs: 2400, maxPerMinute: 20 },

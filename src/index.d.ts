@@ -420,6 +420,11 @@ export interface StudioProfileRecord {
   browserType: string;
   browserChannel?: string;
   headless: boolean;
+  network?: {
+    proxyMode?: "system" | "direct" | "custom" | string;
+    proxyServer?: string;
+    proxyBypass?: string;
+  };
   status: "ready" | "busy" | "blocked" | "disabled" | string;
   leasedRunId: string | null;
   rateLimit: {
@@ -553,6 +558,12 @@ export interface ProfileBrowserSessionPool {
   close(profileOrId?: string | null): Promise<{ closed: number }>;
 }
 
+export function detectActiveProfileLock(profileDir: string, options?: { inspectProcess?: boolean }): Promise<Record<string, unknown> | null>;
+export function releaseProfileLockOwner(profileDir: string, options?: { force?: boolean; signal?: string }): Promise<Record<string, unknown>>;
+export function waitForProfileLockRelease(profileDir: string, options?: { timeoutMs?: number; intervalMs?: number }): Promise<boolean>;
+export function normalizeProfileNetwork(record?: Record<string, unknown>, existing?: Record<string, unknown>): { proxyMode: string; proxyServer: string; proxyBypass: string };
+export function applyProfileNetworkToLaunchOptions(launchOptions?: Record<string, unknown>, network?: Record<string, unknown>): Record<string, unknown>;
+export function profileNetworkArgs(network?: Record<string, unknown>): string[];
 export function createProfileBrowserSessionPool(options?: { clock?: () => Date }): ProfileBrowserSessionPool;
 
 export function createExtensionExecutor(options?: { clock?: () => Date; maxCompletedMs?: number }): {
@@ -570,12 +581,15 @@ export function openProfileLoginWindow(options: {
   clock?: () => Date;
 }): Promise<{
   opened: boolean;
+  reused?: boolean;
+  controlled?: boolean;
   mode: string;
   browserChannel: string;
   profileDir: string;
   profileDirectory: string;
   url: string;
   openedAt: string;
+  lastUsedAt?: string;
 }>;
 
 export function probeProfileSession(options: {

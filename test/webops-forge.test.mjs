@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   ActionValidationError,
+  applyProfileNetworkToLaunchOptions,
   BrowserActionError,
   BrowserBlockedError,
   StudioStore,
@@ -16,14 +17,16 @@ import {
   createFileEvidenceStore,
   createMemoryEvidenceStore,
   createMacChromeAppleScriptExecutor,
-  createProfileBrowserSessionPool,
   openProfileLoginWindow,
   createPlaywrightDriver,
   createRateLimiter,
   createRegistryPack,
+  detectActiveProfileLock,
   detectBlockedState,
   defineAdapter,
-  defineWorkflow
+  defineWorkflow,
+  profileNetworkArgs,
+  releaseProfileLockOwner
 } from "../src/index.mjs";
 
 function createSearchWorkflow(extra = {}) {
@@ -233,6 +236,52 @@ test("blocks persistent profile launch when Chrome owns the profile lock", async
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("profile lock release refuses to signal an unverified owner", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-lock-release-"));
+  try {
+    await symlink(`local-${process.pid}`, path.join(dir, "SingletonLock"));
+    const lock = await detectActiveProfileLock(dir, { inspectProcess: true });
+    assert.equal(lock.pid, process.pid);
+    assert.equal(lock.owner.ownsProfile, false);
+
+    const release = await releaseProfileLockOwner(dir, { force: true });
+    assert.equal(release.requested, false);
+    assert.equal(release.reason, "owner_not_verified");
+    assert.equal(release.lock.pid, process.pid);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("profile network settings produce deterministic browser launch options", () => {
+  assert.deepEqual(profileNetworkArgs({ proxyMode: "direct" }), ["--no-proxy-server"]);
+  assert.deepEqual(profileNetworkArgs({
+    proxyMode: "custom",
+    proxyServer: "socks5://127.0.0.1:29758",
+    proxyBypass: "127.0.0.1,::1,localhost"
+  }), [
+    "--proxy-server=socks5://127.0.0.1:29758",
+    "--proxy-bypass-list=127.0.0.1,::1,localhost"
+  ]);
+
+  const launchOptions = applyProfileNetworkToLaunchOptions({
+    args: ["--profile-directory=Profile 2", "--no-proxy-server"]
+  }, {
+    proxyMode: "custom",
+    proxyServer: "socks5://127.0.0.1:29758",
+    proxyBypass: "localhost"
+  });
+  assert.deepEqual(launchOptions.args, [
+    "--profile-directory=Profile 2",
+    "--proxy-server=socks5://127.0.0.1:29758",
+    "--proxy-bypass-list=localhost"
+  ]);
+  assert.deepEqual(launchOptions.proxy, {
+    server: "socks5://127.0.0.1:29758",
+    bypass: "localhost"
+  });
 });
 
 test("opens a persistent browser profile for manual login without closing it", async () => {

@@ -424,6 +424,7 @@
                 <h2 data-i18n="profileDetails">Profile Details</h2>
                 <div class="button-row">
                   <button class="secondary" id="openProfileButton" type="button" data-i18n="openLoginWindow">Open Login Window</button>
+                  <button class="secondary" id="releaseProfileBrowserButton" type="button" data-i18n="releaseProfileBrowser">Release Browser</button>
                   <button class="secondary" id="checkProfileButton" type="button" data-i18n="checkSession">Check Session</button>
                   <button class="secondary" id="saveProfileButton" type="button" data-i18n="saveProfile">Save Profile</button>
                 </div>
@@ -491,6 +492,22 @@
                 <div>
                   <label for="profileBrowserChannel" data-i18n="browserChannel">Browser Channel</label>
                   <input id="profileBrowserChannel" />
+                </div>
+                <div>
+                  <label for="profileProxyMode" data-i18n="proxyMode">Network</label>
+                  <select id="profileProxyMode">
+                    <option value="system" data-i18n="proxyModeSystem">System</option>
+                    <option value="direct" data-i18n="proxyModeDirect">Direct</option>
+                    <option value="custom" data-i18n="proxyModeCustom">Custom proxy</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="profileProxyServer" data-i18n="proxyServer">Proxy Server</label>
+                  <input id="profileProxyServer" placeholder="socks5://127.0.0.1:29758" />
+                </div>
+                <div>
+                  <label for="profileProxyBypass" data-i18n="proxyBypass">Proxy Bypass</label>
+                  <input id="profileProxyBypass" placeholder="127.0.0.1,::1,localhost" />
                 </div>
                 <div>
                   <label for="profileCheckUrl" data-i18n="sessionCheckUrl">Session Check URL</label>

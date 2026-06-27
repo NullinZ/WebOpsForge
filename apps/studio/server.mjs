@@ -7,6 +7,7 @@ import { StudioStore, createRunQueue } from "../../src/index.mjs";
 import { createWorkflowDebugSlice } from "../../src/studio/debug-workflow.mjs";
 import { createExtensionExecutor } from "../../src/studio/extension-executor.mjs";
 import { discoverLocalBrowserProfiles } from "../../src/studio/local-browser-profiles.mjs";
+import { releaseProfileLockOwner, waitForProfileLockRelease } from "../../src/studio/profile-locks.mjs";
 import { createProfileBrowserSessionPool } from "../../src/studio/profile-browser-session-pool.mjs";
 import { openProfileLoginWindow, probeProfileSession } from "../../src/studio/profile-session.mjs";
 
@@ -377,6 +378,38 @@ async function handleProfiles(req, res, parts) {
     return;
   }
 
+  if (req.method === "POST" && id && parts[2] === "release-browser") {
+    const current = await requireProfile(id);
+    const body = await readJsonBody(req);
+    const force = body.force === true;
+    const controlled = force ? await profileBrowserSessions.close(current.id) : { closed: 0 };
+    const release = current.profileDir
+      ? await releaseProfileLockOwner(current.profileDir, { force })
+      : { requested: false, reason: "missing_profile_dir", lock: null };
+    const released = release.requested
+      ? await waitForProfileLockRelease(current.profileDir)
+      : false;
+    await store.appendAudit({
+      type: "profile.browser_released",
+      profileId: id,
+      profileName: current.name,
+      controlledClosed: controlled.closed,
+      releaseRequested: release.requested,
+      releaseReason: release.reason ?? null,
+      lockPid: release.lock?.pid ?? null,
+      lockOwnerKind: release.lock?.owner?.kind ?? null
+    });
+    sendJson(res, 200, {
+      profile: current,
+      result: {
+        controlled,
+        release: publicProfileLockRelease(release),
+        released
+      }
+    });
+    return;
+  }
+
   if (req.method === "PUT" && id) {
     const current = await requireProfile(id);
     sendJson(res, 200, { profile: await store.saveProfile({ ...current, ...(await readJsonBody(req)), id }) });
@@ -605,6 +638,23 @@ function summarizeRegistry(registry) {
     pages: registry.pages?.length ?? 0,
     actions: registry.actions?.length ?? 0,
     operations: registry.operations?.length ?? 0
+  };
+}
+
+function publicProfileLockRelease(release) {
+  return {
+    requested: Boolean(release?.requested),
+    reason: release?.reason ?? null,
+    signal: release?.signal ?? null,
+    lock: release?.lock ? {
+      pid: release.lock.pid,
+      target: release.lock.target,
+      profileDir: release.lock.profileDir,
+      owner: release.lock.owner ? {
+        kind: release.lock.owner.kind,
+        ownsProfile: release.lock.owner.ownsProfile
+      } : null
+    } : null
   };
 }
 

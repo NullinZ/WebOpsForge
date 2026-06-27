@@ -1,5 +1,3 @@
-import { readlink } from "node:fs/promises";
-import path from "node:path";
 import { createFileEvidenceStore } from "../evidence.mjs";
 import { WebOpsRunner } from "../runner.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
@@ -8,6 +6,8 @@ import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
 import { createChromeProfileHandoffDriver } from "../drivers/chrome-profile-handoff-driver.mjs";
 import { createMacChromeAppleScriptExecutor } from "../drivers/mac-chrome-applescript-executor.mjs";
 import { classifyRunFailure } from "../blocked-state.mjs";
+import { detectActiveProfileLock } from "./profile-locks.mjs";
+import { applyProfileNetworkToLaunchOptions } from "./profile-network.mjs";
 
 const DEFAULT_HUMAN_TIMING = {
   minDelayMs: 800,
@@ -210,22 +210,6 @@ function operationUsesApiBranch(step) {
   return mode === "api" || mode === "http";
 }
 
-async function detectActiveProfileLock(profileDir) {
-  try {
-    const target = await readlink(path.join(profileDir, "SingletonLock"));
-    const pid = Number(String(target).match(/-(\d+)$/)?.[1]);
-    if (!Number.isInteger(pid) || pid <= 0) return null;
-    try {
-      process.kill(pid, 0);
-      return { pid, target };
-    } catch {
-      return null;
-    }
-  } catch {
-    return null;
-  }
-}
-
 function mergeDriverConfig(driverConfig, profile) {
   if (!profile) return driverConfig;
   if (profile.mode === "playwright") {
@@ -238,12 +222,16 @@ function mergeDriverConfig(driverConfig, profile) {
         ["--disable-extensions"]
       );
     }
+    const launchOptions = mergeLaunchOptions(
+      applyProfileNetworkToLaunchOptions(profileLaunchOptions, profile.network),
+      driverConfig.launchOptions
+    );
     return {
       browserType: profile.browserType ?? "chromium",
       profileDir: profile.profileDir || driverConfig.profileDir || null,
       headless: Boolean(profile.headless),
       ...driverConfig,
-      launchOptions: mergeLaunchOptions(profileLaunchOptions, driverConfig.launchOptions)
+      launchOptions
     };
   }
   return driverConfig;
@@ -255,7 +243,7 @@ function mergeLaunchOptions(profileOptions = {}, runOptions = {}) {
     ...(Array.isArray(profileOptions.args) ? profileOptions.args : []),
     ...(Array.isArray(runOptions.args) ? runOptions.args : [])
   ];
-  merged.args = dedupeProfileDirectoryArgs(args);
+  merged.args = dedupeLaunchArgs(args);
   merged.ignoreDefaultArgs = mergeIgnoreDefaultArgs(profileOptions.ignoreDefaultArgs, runOptions.ignoreDefaultArgs);
   return merged;
 }
@@ -269,12 +257,21 @@ function mergeIgnoreDefaultArgs(profileValue, runValue) {
   return values.length ? Array.from(new Set(values)) : undefined;
 }
 
-function dedupeProfileDirectoryArgs(args) {
+function dedupeLaunchArgs(args) {
   const result = [];
   for (const arg of args) {
-    if (String(arg).startsWith("--profile-directory=")) {
+    const text = String(arg);
+    if (text.startsWith("--profile-directory=")) {
       const existingIndex = result.findIndex((item) => String(item).startsWith("--profile-directory="));
       if (existingIndex !== -1) result.splice(existingIndex, 1);
+    }
+    if (text === "--no-proxy-server" || text.startsWith("--proxy-server=") || text.startsWith("--proxy-bypass-list=")) {
+      for (let index = result.length - 1; index >= 0; index -= 1) {
+        const existing = String(result[index]);
+        if (existing === "--no-proxy-server" || existing.startsWith("--proxy-server=") || existing.startsWith("--proxy-bypass-list=")) {
+          result.splice(index, 1);
+        }
+      }
     }
     result.push(arg);
   }

@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { BrowserActionError } from "../errors.mjs";
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
+import { applyProfileNetworkToLaunchOptions, normalizeProfileNetwork, profileNetworkArgs } from "./profile-network.mjs";
 
 const DEFAULT_LOGIN_URL = "about:blank";
 
@@ -53,6 +54,7 @@ export async function openProfileLoginWindow({ profile, overrides = {}, opener =
 
   const browserChannel = overrides.browserChannel ?? profile.browserChannel ?? "chrome";
   const profileDirectory = overrides.profileDirectory ?? profile.profileDirectory ?? "";
+  const network = normalizeProfileNetwork(overrides, profile);
   const targetUrl = normalizeLoginUrl(
     overrides.url
       ?? overrides.sessionCheckUrl
@@ -66,6 +68,7 @@ export async function openProfileLoginWindow({ profile, overrides = {}, opener =
     profileDir,
     profileDirectory,
     browserChannel,
+    network,
     targetUrl
   });
   await opener(command, args);
@@ -154,7 +157,7 @@ function createProfileLaunchOptions({ profile, overrides }) {
       ["--disable-extensions"]
     );
   }
-  return launchOptions;
+  return applyProfileNetworkToLaunchOptions(launchOptions, normalizeProfileNetwork(overrides, profile));
 }
 
 function mergeIgnoreDefaultArgs(currentValue, additionalValues) {
@@ -181,8 +184,8 @@ function browserExecutableForChannel(channel) {
   return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 }
 
-function loginWindowArgs({ profileDir, profileDirectory, browserChannel, targetUrl }) {
-  const args = [];
+function loginWindowArgs({ profileDir, profileDirectory, browserChannel, network, targetUrl }) {
+  const args = profileNetworkArgs(network);
   if (shouldPassUserDataDir({ profileDir, profileDirectory, browserChannel })) {
     args.push(`--user-data-dir=${profileDir}`);
   }
