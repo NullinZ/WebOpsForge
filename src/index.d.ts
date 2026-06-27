@@ -245,6 +245,12 @@ export function createPlaywrightDriver(options?: {
   page?: unknown;
 }): Promise<BrowserDriver>;
 
+export function createChromeProfileHandoffDriver(options?: {
+  browserChannel?: string | null;
+  profileDirectory?: string | null;
+  opener?: (command: string, args: string[], options?: Record<string, unknown>) => Promise<unknown>;
+}): BrowserDriver & { kind: "chrome-profile-handoff" };
+
 export interface WebOpsAdapter {
   id: string;
   name: string;
@@ -524,7 +530,7 @@ export class StudioStore {
   reset(): Promise<void>;
 }
 
-export function createRunQueue(options: { store: StudioStore; concurrency?: number; clock?: () => Date }): {
+export function createRunQueue(options: { store: StudioStore; concurrency?: number; clock?: () => Date; chromeHandoffOpener?: (command: string, args: string[], options?: Record<string, unknown>) => Promise<unknown> }): {
   enqueue(runId: string): void;
   cancel(runId: string, reason?: string): Promise<{ run: StudioRunRecord; changed: boolean }>;
   status(): { pending: number; active: number; concurrency: number; activeRunIds: string[]; pendingRunIds: string[] };

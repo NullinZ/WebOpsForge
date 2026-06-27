@@ -11,6 +11,7 @@ import {
   WebOpsRunner,
   classifyRunFailure,
   createFixtureDriverConfig,
+  createChromeProfileHandoffDriver,
   createDryRunDriver,
   createFileEvidenceStore,
   createMemoryEvidenceStore,
@@ -229,6 +230,33 @@ test("blocks persistent profile launch when Chrome owns the profile lock", async
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("hands goto URLs to a local Chrome profile", async () => {
+  const calls = [];
+  const driver = createChromeProfileHandoffDriver({
+    browserChannel: "chrome",
+    profileDirectory: "Profile 2",
+    opener: async (command, args, options) => {
+      calls.push({ command, args, options });
+    }
+  });
+
+  const result = await driver.goto({ url: "https://douyin.com", timeoutMs: 7000 });
+
+  assert.equal(result.handoff, true);
+  assert.equal(result.profileDirectory, "Profile 2");
+  assert.deepEqual(calls[0].args, [
+    "-a",
+    "Google Chrome",
+    "https://douyin.com/",
+    "--args",
+    "--profile-directory=Profile 2"
+  ]);
+  await assert.rejects(
+    driver.fill({ selector: "#q", value: "chrome" }),
+    /Chrome profile handoff can only open URLs/
+  );
 });
 
 test("writes file evidence records and artifacts", async () => {

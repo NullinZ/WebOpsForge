@@ -300,6 +300,65 @@ test("run queue executes a debug workflow override instead of the full workflow"
   }
 });
 
+test("run queue hands goto-only Chrome profile debug runs to the local browser", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-chrome-handoff-run-"));
+  try {
+    const store = new StudioStore({ dir });
+    await store.init();
+    const workflow = await store.saveWorkflow({
+      id: "chrome-handoff-fixture",
+      name: "Chrome handoff fixture",
+      workflow: defineWorkflow({
+        name: "chrome-handoff-fixture",
+        steps: [
+          { id: "open", action: "goto", url: "https://douyin.com" },
+          { id: "fill", action: "fill", selector: "#q", value: "{{input.query}}" }
+        ]
+      })
+    });
+    const profile = await store.saveProfile({
+      id: "chrome-profile-2",
+      name: "Chrome Profile 2",
+      mode: "playwright",
+      browserType: "chromium",
+      browserChannel: "chrome",
+      profileDir: "/Users/example/Library/Application Support/Google/Chrome",
+      profileDirectory: "Profile 2",
+      status: "ready"
+    });
+    const run = await store.createRun({
+      workflowId: workflow.id,
+      mode: "playwright",
+      profileId: profile.id,
+      workflowOverride: createWorkflowDebugSlice(workflow.workflow, "open"),
+      debug: { mode: "run-to-node", targetStepId: "open" }
+    });
+    const calls = [];
+    const queue = createRunQueue({
+      store,
+      chromeHandoffOpener: async (command, args, options) => {
+        calls.push({ command, args, options });
+      }
+    });
+    queue.enqueue(run.id);
+    const completed = await waitForRun(store, run.id);
+
+    assert.equal(completed.status, "completed");
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].args, [
+      "-a",
+      "Google Chrome",
+      "https://douyin.com/",
+      "--args",
+      "--profile-directory=Profile 2"
+    ]);
+    const events = await store.readRunEvents(run.id);
+    assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "open" && event.result?.handoff === true));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("run queue records blocked-state classification for stalled browser work", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-studio-"));
   try {

@@ -5,6 +5,7 @@ export { createRateLimiter } from "./rate-limit.mjs";
 export { createFetchApiClient, executeApiCall } from "./api-client.mjs";
 export { createDryRunDriver } from "./drivers/dry-run-driver.mjs";
 export { createPlaywrightDriver } from "./drivers/playwright-driver.mjs";
+export { createChromeProfileHandoffDriver } from "./drivers/chrome-profile-handoff-driver.mjs";
 export { defineAdapter, createRegistryPack, createFixtureDriverConfig, installAdapterToStore } from "./adapter.mjs";
 export { classifyRunFailure, detectBlockedState } from "./blocked-state.mjs";
 export { StudioStore } from "./studio/store.mjs";

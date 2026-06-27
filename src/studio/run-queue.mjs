@@ -3,6 +3,7 @@ import { WebOpsRunner } from "../runner.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
 import { createDryRunDriver } from "../drivers/dry-run-driver.mjs";
 import { createPlaywrightDriver } from "../drivers/playwright-driver.mjs";
+import { createChromeProfileHandoffDriver } from "../drivers/chrome-profile-handoff-driver.mjs";
 import { classifyRunFailure } from "../blocked-state.mjs";
 
 const DEFAULT_HUMAN_TIMING = {
@@ -10,7 +11,7 @@ const DEFAULT_HUMAN_TIMING = {
   maxDelayMs: 2200
 };
 
-export function createRunQueue({ store, concurrency = 1, clock = () => new Date() }) {
+export function createRunQueue({ store, concurrency = 1, clock = () => new Date(), chromeHandoffOpener = null }) {
   const pending = [];
   const active = new Set();
   const controllers = new Map();
@@ -91,7 +92,7 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     let driver = null;
     try {
       leasedProfile = await store.leaseProfile(run.profileId, runId);
-      driver = await createDriver(run, leasedProfile);
+      driver = await createDriver(run, leasedProfile, { chromeHandoffOpener });
       const rateLimiter = createRunRateLimiter(run, leasedProfile);
       const runner = new WebOpsRunner({ driver, evidenceStore, rateLimiter, clock });
       const result = await runner.run(run.workflowOverride ?? workflowRecord.workflow, {
@@ -124,12 +125,33 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
   }
 }
 
-async function createDriver(run, profile = null) {
+async function createDriver(run, profile = null, { chromeHandoffOpener = null } = {}) {
   const mergedConfig = mergeDriverConfig(run.driverConfig ?? {}, profile);
   if (run.mode === "playwright" || profile?.mode === "playwright") {
+    if (shouldUseChromeProfileHandoff(run, profile)) {
+      return createChromeProfileHandoffDriver({
+        browserChannel: profile.browserChannel,
+        profileDirectory: profile.profileDirectory,
+        opener: chromeHandoffOpener ?? undefined
+      });
+    }
     return createPlaywrightDriver(mergedConfig);
   }
   return createDryRunDriver(mergedConfig);
+}
+
+function shouldUseChromeProfileHandoff(run, profile) {
+  if (process.platform !== "darwin") return false;
+  if (run.debug?.mode !== "run-to-node") return false;
+  if (!profile?.profileDirectory) return false;
+  if (!["chrome", "chromium", "msedge"].includes(String(profile.browserChannel || "chrome"))) return false;
+  return isGotoOnlyWorkflow(run.workflowOverride);
+}
+
+function isGotoOnlyWorkflow(workflow) {
+  const steps = Array.isArray(workflow?.steps) ? workflow.steps : [];
+  if (!steps.length) return false;
+  return steps.every((step) => step?.action === "goto" || step?.action === "checkpoint");
 }
 
 function mergeDriverConfig(driverConfig, profile) {
