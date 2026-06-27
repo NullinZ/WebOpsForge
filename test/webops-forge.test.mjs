@@ -246,16 +246,21 @@ test("hands goto URLs to a local Chrome profile", async () => {
 
   assert.equal(result.handoff, true);
   assert.equal(result.profileDirectory, "Profile 2");
+  assert.equal(result.handoffMethod, "browser-executable");
+  assert.equal(calls[0].command, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
   assert.deepEqual(calls[0].args, [
-    "-a",
-    "Google Chrome",
-    "https://douyin.com/",
-    "--args",
-    "--profile-directory=Profile 2"
+    "--profile-directory=Profile 2",
+    "https://douyin.com/"
   ]);
   await assert.rejects(
     driver.fill({ selector: "#q", value: "chrome" }),
-    /Chrome profile handoff can only open URLs/
+    (error) => {
+      assert.match(error.message, /opened the page in the front browser/);
+      assert.equal(error.details.reason, "chrome_profile_handoff_unsupported_action");
+      assert.equal(error.details.action, "fill");
+      assert.equal(error.details.currentUrl, "https://douyin.com/");
+      return true;
+    }
   );
 });
 

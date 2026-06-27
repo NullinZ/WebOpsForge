@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -203,14 +203,32 @@ test("discovers local browser profiles from Chrome user data", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "webops-browser-profiles-"));
   try {
     const chromeRoot = path.join(dir, "chrome");
+    const defaultRoot = path.join(chromeRoot, "Default");
     const profileRoot = path.join(chromeRoot, "Profile 1");
+    const genericProfileRoot = path.join(chromeRoot, "Profile 4");
+    await mkdir(defaultRoot, { recursive: true });
     await mkdir(profileRoot, { recursive: true });
+    await mkdir(genericProfileRoot, { recursive: true });
     await writeFile(path.join(chromeRoot, "Local State"), JSON.stringify({
-      profile: { info_cache: { "Profile 1": { name: "Local Operator" } } }
+      profile: {
+        info_cache: {
+          Default: { name: "用户1", gaia_name: "Nullin TH" },
+          "Profile 1": { name: "Local Operator" },
+          "Profile 4": { name: "nullinzuk", gaia_name: "nullinzuk" }
+        }
+      }
+    }));
+    await writeFile(path.join(defaultRoot, "Preferences"), JSON.stringify({
+      profile: { name: "用户1" },
+      account_info: [{ full_name: "Nullin TH", email: "nullin@example.invalid" }]
     }));
     await writeFile(path.join(profileRoot, "Preferences"), JSON.stringify({
       profile: { name: "Chrome Work" },
       account_info: [{ full_name: "Operator Name", email: "operator@example.invalid" }]
+    }));
+    await writeFile(path.join(genericProfileRoot, "Preferences"), JSON.stringify({
+      profile: { name: "您的 Chrome" },
+      account_info: [{ full_name: "nullinzuk", email: "profile4@example.invalid" }]
     }));
 
     const profiles = await discoverLocalBrowserProfiles({
@@ -230,13 +248,17 @@ test("discovers local browser profiles from Chrome user data", async () => {
       }]
     });
 
-    assert.equal(profiles.length, 1);
-    assert.equal(profiles[0].accountLabel, "Chrome Work");
-    assert.equal(profiles[0].profileDir, chromeRoot);
-    assert.equal(profiles[0].profileDirectory, "Profile 1");
-    assert.equal(profiles[0].browserChannel, "chrome");
-    assert.equal(profiles[0].existingProfileId, "saved-chrome-work");
+    const byDirectory = Object.fromEntries(profiles.map((profile) => [profile.profileDirectory, profile]));
+    assert.equal(profiles.length, 3);
+    assert.equal(byDirectory.Default.accountLabel, "Nullin TH");
+    assert.equal(byDirectory["Profile 1"].accountLabel, "Local Operator");
+    assert.equal(byDirectory["Profile 4"].accountLabel, "nullinzuk");
+    assert.equal(byDirectory["Profile 1"].profileDir, chromeRoot);
+    assert.equal(byDirectory["Profile 1"].profileDirectory, "Profile 1");
+    assert.equal(byDirectory["Profile 1"].browserChannel, "chrome");
+    assert.equal(byDirectory["Profile 1"].existingProfileId, "saved-chrome-work");
     assert.equal(JSON.stringify(profiles).includes("operator@example.invalid"), false);
+    assert.equal(JSON.stringify(profiles).includes("profile4@example.invalid"), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -346,15 +368,77 @@ test("run queue can explicitly hand goto-only Chrome profile debug runs to the f
 
     assert.equal(completed.status, "completed");
     assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
     assert.deepEqual(calls[0].args, [
-      "-a",
-      "Google Chrome",
-      "https://douyin.com/",
-      "--args",
-      "--profile-directory=Profile 2"
+      "--profile-directory=Profile 2",
+      "https://douyin.com/"
     ]);
     const events = await store.readRunEvents(run.id);
-    assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "open" && event.result?.handoff === true));
+    assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "open" && event.result?.handoff === true && event.result?.handoffMethod === "browser-executable"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run queue hands locked Chrome profiles to the front browser before executor-only steps", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "webops-locked-chrome-handoff-run-"));
+  try {
+    const profileDir = path.join(dir, "chrome");
+    await mkdir(profileDir, { recursive: true });
+    await symlink(`Host-${process.pid}`, path.join(profileDir, "SingletonLock"));
+    const store = new StudioStore({ dir: path.join(dir, "store") });
+    await store.init();
+    const workflow = await store.saveWorkflow({
+      id: "locked-chrome-handoff-fixture",
+      name: "Locked Chrome handoff fixture",
+      workflow: defineWorkflow({
+        name: "locked-chrome-handoff-fixture",
+        steps: [
+          { id: "open", action: "goto", url: "https://douyin.com" },
+          { id: "fill", action: "fill", selector: "#q", value: "{{input.query}}" }
+        ]
+      })
+    });
+    const profile = await store.saveProfile({
+      id: "chrome-profile-2",
+      name: "Chrome Profile 2",
+      mode: "playwright",
+      browserType: "chromium",
+      browserChannel: "chrome",
+      profileDir,
+      profileDirectory: "Profile 2",
+      status: "ready"
+    });
+    const run = await store.createRun({
+      workflowId: workflow.id,
+      mode: "playwright",
+      profileId: profile.id,
+      input: { query: "storage case" },
+      driverConfig: { humanTiming: false }
+    });
+    const calls = [];
+    const queue = createRunQueue({
+      store,
+      chromeHandoffOpener: async (command, args, options) => {
+        calls.push({ command, args, options });
+      }
+    });
+    queue.enqueue(run.id);
+    const completed = await waitForRun(store, run.id);
+
+    assert.equal(completed.status, "failed");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+    assert.deepEqual(calls[0].args, [
+      "--profile-directory=Profile 2",
+      "https://douyin.com/"
+    ]);
+    assert.notEqual(completed.error.code, "PROFILE_BUSY");
+    assert.equal(completed.error.details.reason, "chrome_profile_handoff_unsupported_action");
+    assert.equal(completed.error.details.action, "fill");
+    assert.equal(completed.error.details.currentUrl, "https://douyin.com/");
+    const events = await store.readRunEvents(run.id);
+    assert.ok(events.some((event) => event.type === "step.completed" && event.stepId === "open" && event.result?.handoff === true && event.result?.handoffMethod === "browser-executable"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

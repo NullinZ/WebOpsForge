@@ -358,6 +358,12 @@
           </div>
 
           <div class="tab-panel" id="runPanel">
+            <div class="section-head compact">
+              <h2 data-i18n="defaultRun">Default Run</h2>
+              <div class="button-row">
+                <button class="secondary" id="saveRunConfigButton" type="button" data-i18n="saveWorkflowConfig">Save Workflow</button>
+              </div>
+            </div>
             <div class="run-grid">
               <div>
                 <label for="runMode" data-i18n="mode">Mode</label>
@@ -379,6 +385,13 @@
                 </select>
               </div>
             </div>
+            <div class="profile-reference">
+              <div class="profile-reference-main">
+                <span data-i18n="profileReference">Profile Reference</span>
+                <strong id="runProfileSummary">no profile</strong>
+              </div>
+              <button class="secondary" id="editRunProfileButton" type="button" data-i18n="editProfile">Edit Profile</button>
+            </div>
             <div class="operation-modes">
               <label for="operationModesJson" data-i18n="operationModes">Operation Modes</label>
               <textarea id="operationModesJson" spellcheck="false"></textarea>
@@ -397,7 +410,9 @@
                 <textarea id="driverConfigJson" spellcheck="false"></textarea>
               </div>
             </div>
+          </div>
 
+          <div class="tab-panel" id="profilePanel">
             <div class="profile-editor">
               <div class="section-head compact">
                 <h2 data-i18n="profileDetails">Profile Details</h2>

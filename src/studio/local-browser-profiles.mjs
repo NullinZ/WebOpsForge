@@ -80,10 +80,55 @@ function defaultBrowserRoots(homeDir) {
 }
 
 function profileDisplayName(profileDirectory, preferences, localState) {
-  const cached = localState?.profile?.info_cache?.[profileDirectory]?.name;
+  const cachedProfile = localState?.profile?.info_cache?.[profileDirectory] ?? {};
+  const cachedName = cachedProfile.name;
   const preferenceName = preferences?.profile?.name;
   const firstAccount = Array.isArray(preferences?.account_info) ? preferences.account_info[0] : null;
-  return String(preferenceName || cached || firstAccount?.full_name || firstAccount?.given_name || profileDirectory).trim();
+  const explicitName = [
+    cachedName,
+    preferenceName,
+    cachedProfile.shortcut_name
+  ].find((value) => isReadableProfileName(value, profileDirectory));
+  const accountName = [
+    cachedProfile.gaia_name,
+    firstAccount?.full_name,
+    cachedProfile.given_name,
+    firstAccount?.given_name
+  ].find((value) => isReadableProfileName(value, profileDirectory));
+  const fallbackName = [cachedName, preferenceName, profileDirectory]
+    .map((value) => String(value ?? "").trim())
+    .find(Boolean);
+  return String(explicitName || accountName || fallbackName || profileDirectory).trim();
+}
+
+function isReadableProfileName(value, profileDirectory) {
+  const text = String(value ?? "").trim();
+  if (!text || looksLikeEmail(text)) return false;
+  return !isGenericProfileName(text, profileDirectory);
+}
+
+function isGenericProfileName(value, profileDirectory) {
+  const text = String(value ?? "").trim();
+  const compact = text.replace(/\s+/g, "").toLowerCase();
+  const normalizedDirectory = String(profileDirectory ?? "").trim().replace(/\s+/g, "").toLowerCase();
+  if (!compact || compact === normalizedDirectory) return true;
+  return [
+    /^user\d+$/i,
+    /^person\d+$/i,
+    /^profile\d+$/i,
+    /^用户\d+$/i,
+    /^使用者\d+$/i,
+    /^个人资料\d+$/i,
+    /^您的chrome$/i,
+    /^你的chrome$/i,
+    /^yourchrome$/i,
+    /^chromeprofile$/i,
+    /^defaultprofile$/i
+  ].some((pattern) => pattern.test(compact));
+}
+
+function looksLikeEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? "").trim());
 }
 
 function findExistingProfileId(candidate, profiles) {

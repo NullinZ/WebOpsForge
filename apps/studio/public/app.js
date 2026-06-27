@@ -7,6 +7,7 @@ const state = {
   localBrowserProfiles: [],
   localBrowserProfilesLoaded: false,
   selectedLocalProfileId: "",
+  runProfileDraftId: "",
   runs: [],
   audit: [],
   pickerEvents: [],
@@ -275,12 +276,14 @@ const I18N = {
     confidence: "Confidence",
     context: "Context",
     dataDir: "data: {path}",
+    defaultRun: "Default Run",
     delete: "Delete",
     definition: "Definition",
     definitionJson: "Definition JSON",
     description: "Description",
     detailFieldsJson: "Detail Fields JSON",
     driver: "Driver",
+    editProfile: "Edit Profile",
     evidence: "Evidence",
     export: "Export",
     exportReady: "Export ready",
@@ -358,6 +361,7 @@ const I18N = {
     profileDir: "User Data Dir",
     profileDirectory: "Chrome Profile",
     profileIdRequired: "Profile ID is required",
+    profileReference: "Profile Reference",
     profileSaved: "Profile saved",
     profiles: "Profiles",
     refresh: "Refresh",
@@ -386,6 +390,7 @@ const I18N = {
     runWorkflow: "Run Workflow",
     runs: "Runs",
     save: "Save",
+    saveWorkflowConfig: "Save Workflow",
     saveProfile: "Save Profile",
     savedProfiles: "Saved Profiles",
     saveResource: "Save Resource",
@@ -442,12 +447,14 @@ const I18N = {
     confidence: "置信度",
     context: "上下文",
     dataDir: "数据目录：{path}",
+    defaultRun: "默认运行",
     delete: "删除",
     definition: "定义",
     definitionJson: "定义 JSON",
     description: "描述",
     detailFieldsJson: "详情字段 JSON",
     driver: "驱动配置",
+    editProfile: "编辑 Profile",
     evidence: "证据",
     export: "导出",
     exportReady: "导出已准备好",
@@ -525,6 +532,7 @@ const I18N = {
     profileDir: "用户数据目录",
     profileDirectory: "Chrome 子 Profile",
     profileIdRequired: "必须填写 Profile ID",
+    profileReference: "Profile 引用",
     profileSaved: "Profile 已保存",
     profiles: "Profiles",
     refresh: "刷新",
@@ -553,6 +561,7 @@ const I18N = {
     runWorkflow: "运行工作流",
     runs: "运行记录",
     save: "保存",
+    saveWorkflowConfig: "保存工作流",
     saveProfile: "保存 Profile",
     savedProfiles: "已保存 Profile",
     saveResource: "保存资源",
@@ -971,6 +980,7 @@ const REGISTRY_SECTIONS = [
 const elements = {
   languageToggle: document.querySelector("#languageToggle"),
   runtimeStatus: document.querySelector("#runtimeStatus"),
+  editorPane: document.querySelector(".editor-pane"),
   queueStatus: document.querySelector("#queueStatus"),
   registryMetrics: document.querySelector("#registryMetrics"),
   registrySectionTabs: document.querySelector("#registrySectionTabs"),
@@ -1036,6 +1046,8 @@ const elements = {
   workflowJson: document.querySelector("#workflowJson"),
   runMode: document.querySelector("#runMode"),
   profileSelect: document.querySelector("#profileSelect"),
+  runProfileSummary: document.querySelector("#runProfileSummary"),
+  editRunProfileButton: document.querySelector("#editRunProfileButton"),
   approvalToggle: document.querySelector("#approvalToggle"),
   operationModesJson: document.querySelector("#operationModesJson"),
   runInputJson: document.querySelector("#runInputJson"),
@@ -1123,6 +1135,8 @@ document.addEventListener("click", (event) => {
 document.querySelector("#newProfileButton").addEventListener("click", () => createBlankProfile());
 document.querySelector("#saveProfileButton").addEventListener("click", () => saveSelectedProfile());
 document.querySelector("#checkProfileButton").addEventListener("click", () => checkSelectedProfile());
+document.querySelector("#saveRunConfigButton").addEventListener("click", () => saveSelectedWorkflow());
+elements.editRunProfileButton.addEventListener("click", () => editRunProfileFromRunConfig());
 elements.profileSelect.addEventListener("change", () => handleProfileSelectChange());
 elements.localProfileSelect.addEventListener("change", () => {
   state.selectedLocalProfileId = elements.localProfileSelect.value;
@@ -1187,7 +1201,17 @@ await refreshAll();
 startPolling();
 
 async function refreshAll() {
-  await Promise.all([loadRuntime(), loadRegistry(), loadWorkflows(), loadProfiles(), loadRuns(), loadAudit(), loadPickerEvents(), loadPickerSession()]);
+  await Promise.all([
+    loadRuntime(),
+    loadRegistry(),
+    loadWorkflows(),
+    loadProfiles(),
+    loadLocalBrowserProfiles(),
+    loadRuns(),
+    loadAudit(),
+    loadPickerEvents(),
+    loadPickerSession()
+  ]);
   if (!state.selectedWorkflowId && state.workflows[0]) selectWorkflow(state.workflows[0].id);
   if (!state.selectedProfileId && state.profiles[0]) selectProfile(state.profiles[0].id);
   if (!state.selectedRegistryId) selectDefaultRegistryItem();
@@ -1293,21 +1317,28 @@ function renderProfiles() {
   const savedGroup = document.createElement("optgroup");
   savedGroup.label = t("savedProfiles");
   for (const profile of state.profiles) {
+    const displayProfile = displayProfileForSavedProfile(profile);
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = `${profile.name}${profile.accountLabel ? ` / ${profile.accountLabel}` : ""} (${profileKindLabel(profile)})`;
+    option.textContent = `${displayProfile.name}${displayProfile.accountLabel ? ` / ${displayProfile.accountLabel}` : ""} (${profileKindLabel(displayProfile)})`;
     savedGroup.append(option);
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `profile-row ${profile.id === state.selectedProfileId ? "active" : ""}`;
-    const identity = profile.accountLabel || profile.platform || profile.mode;
-    button.innerHTML = `
-      <span class="row-title">${escapeHtml(profile.name)}</span>
-      <span class="row-meta">${escapeHtml(profileKindLabel(profile))} · ${escapeHtml(statusLabel(profile.status))} · ${escapeHtml(statusLabel(profile.loginState ?? "unchecked"))} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
+    const row = document.createElement("div");
+    row.className = `profile-row ${profile.id === state.selectedProfileId ? "active" : ""}`;
+    const identity = displayProfile.accountLabel || profile.platform || profile.mode;
+    row.innerHTML = `
+      <div class="profile-row-main">
+        <span class="row-title">${escapeHtml(displayProfile.name)}</span>
+        <span class="row-meta">${escapeHtml(profileKindLabel(displayProfile))} · ${escapeHtml(statusLabel(profile.status))} · ${escapeHtml(statusLabel(profile.loginState ?? "unchecked"))} · ${escapeHtml(identity)}${profile.leasedRunId ? ` · ${escapeHtml(profile.leasedRunId)}` : ""}</span>
+      </div>
+      <button class="secondary compact-button profile-edit-button" type="button" data-profile-edit="${escapeHtml(profile.id)}">${escapeHtml(t("editProfile"))}</button>
     `;
-    button.addEventListener("click", () => selectProfile(profile.id));
-    elements.profileList.append(button);
+    row.addEventListener("click", () => selectProfile(profile.id));
+    row.querySelector("[data-profile-edit]").addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectProfile(profile.id, { focusPanel: true });
+    });
+    elements.profileList.append(row);
   }
   elements.profileSelect.append(savedGroup);
 
@@ -1325,10 +1356,42 @@ function renderProfiles() {
   }
 
   const workflow = state.workflows.find((item) => item.id === state.selectedWorkflowId);
-  const selectedProfile = state.selectedProfileId ?? workflow?.defaultRun?.profileId ?? "";
+  const candidateProfile = state.runProfileDraftId ?? workflow?.defaultRun?.profileId ?? "";
+  const selectedProfile = [...elements.profileSelect.options].some((option) => option.value === candidateProfile)
+    ? candidateProfile
+    : "";
   if ([...elements.profileSelect.options].some((option) => option.value === selectedProfile)) {
     elements.profileSelect.value = selectedProfile;
+  } else {
+    elements.profileSelect.value = "";
   }
+  renderRunProfileReference();
+}
+
+function renderRunProfileReference() {
+  const value = elements.profileSelect.value;
+  const localProfileId = localProfileIdFromOptionValue(value);
+  const profile = localProfileId
+    ? state.localBrowserProfiles.find((item) => item.id === localProfileId)
+    : displayProfileForSavedProfile(state.profiles.find((item) => item.id === value));
+  if (!value || !profile) {
+    elements.runProfileSummary.textContent = t("noProfile");
+    elements.runProfileSummary.classList.add("muted");
+    elements.editRunProfileButton.disabled = true;
+    return;
+  }
+  const title = profile.name || profile.accountLabel || profile.profileDirectory || profile.id;
+  const accountLabel = profile.accountLabel && !String(title).includes(profile.accountLabel)
+    ? profile.accountLabel
+    : "";
+  const meta = [
+    accountLabel,
+    profileKindLabel(profile),
+    statusLabel(profile.loginState ?? "unchecked")
+  ].filter(Boolean);
+  elements.runProfileSummary.textContent = meta.length ? `${title} · ${meta.join(" · ")}` : title;
+  elements.runProfileSummary.classList.remove("muted");
+  elements.editRunProfileButton.disabled = false;
 }
 
 function renderLocalBrowserProfiles() {
@@ -3298,31 +3361,30 @@ function selectWorkflow(id) {
   elements.workflowDescription.value = workflow.description ?? "";
   elements.workflowJson.value = formatJson(workflow.workflow);
   elements.runMode.value = workflow.defaultRun?.mode ?? "dry-run";
-  const defaultProfileId = workflow.defaultRun?.profileId ?? "";
-  if (defaultProfileId && state.profiles.some((profile) => profile.id === defaultProfileId)) {
-    state.selectedProfileId = defaultProfileId;
-  }
-  elements.profileSelect.value = defaultProfileId;
+  state.runProfileDraftId = workflow.defaultRun?.profileId ?? "";
+  elements.profileSelect.value = state.runProfileDraftId;
   elements.approvalToggle.value = "keep";
   elements.operationModesJson.value = formatJson(workflow.defaultRun?.context?.operationModes ?? detectOperationModes(workflow.workflow));
   elements.runInputJson.value = formatJson(workflow.defaultRun?.input ?? {});
   elements.runContextJson.value = formatJson(workflow.defaultRun?.context ?? {});
   elements.driverConfigJson.value = formatJson(workflow.defaultRun?.driverConfig ?? {});
   renderWorkflows();
+  renderRunProfileReference();
   renderGraph();
 }
 
-function selectProfile(id) {
+function selectProfile(id, { focusPanel = false } = {}) {
   const profile = state.profiles.find((item) => item.id === id);
   if (!profile) return;
   state.selectedProfileId = id;
+  const displayProfile = displayProfileForSavedProfile(profile);
   const localProfile = localBrowserProfileForSavedProfile(profile);
   if (localProfile) state.selectedLocalProfileId = localProfile.id;
   elements.profileId.value = profile.id;
-  elements.profileName.value = profile.name;
+  elements.profileName.value = displayProfile.name;
   elements.profileMode.value = profile.mode;
   elements.profilePlatform.value = profile.platform ?? profile.sessionCheck?.platform ?? "";
-  elements.profileAccountLabel.value = profile.accountLabel ?? "";
+  elements.profileAccountLabel.value = displayProfile.accountLabel ?? "";
   elements.profileLoginState.value = profile.loginState ?? "unchecked";
   elements.profileStatus.value = profile.status;
   elements.profileDir.value = profile.profileDir ?? "";
@@ -3332,6 +3394,7 @@ function selectProfile(id) {
   elements.profileAccountSelector.value = profile.sessionCheck?.accountSelector ?? "";
   elements.profileRate.value = profile.rateLimit?.maxPerMinute ?? "";
   renderProfiles();
+  if (focusPanel) selectTab("profile");
 }
 
 async function selectRun(id) {
@@ -4159,50 +4222,64 @@ async function handleProfileSelectChange() {
   const localProfileId = localProfileIdFromOptionValue(value);
   if (localProfileId) {
     const localProfile = state.localBrowserProfiles.find((profile) => profile.id === localProfileId);
-    if (localProfile) await importAndSelectLocalProfile(localProfile);
+    if (localProfile) await importAndSelectLocalProfile(localProfile, { assignRunProfile: true });
     return;
   }
-  if (value) {
-    selectProfile(value);
-  }
+  state.runProfileDraftId = value || "";
+  renderRunProfileReference();
 }
 
 async function applySelectedLocalProfile() {
   try {
     const localProfile = state.localBrowserProfiles.find((profile) => profile.id === elements.localProfileSelect.value);
     if (!localProfile) return;
-    await importAndSelectLocalProfile(localProfile);
+    await importAndSelectLocalProfile(localProfile, { focusPanel: true });
   } catch (error) {
     showToast(error.message);
   }
 }
 
-async function importAndSelectLocalProfile(localProfile) {
+async function importAndSelectLocalProfile(localProfile, { assignRunProfile = false, focusPanel = false } = {}) {
   state.selectedLocalProfileId = localProfile.id;
   if (localProfile.existingProfileId) {
-    selectProfile(localProfile.existingProfileId);
+    const existingProfile = state.profiles.find((profile) => profile.id === localProfile.existingProfileId);
+    const data = await api("/api/profiles", {
+      method: "POST",
+      body: localProfileSaveBody(localProfile, {
+        id: localProfile.existingProfileId,
+        includeRuntimeDefaults: false,
+        existingProfile
+      })
+    });
+    await Promise.all([loadProfiles(), loadLocalBrowserProfiles(), loadAudit()]);
+    state.selectedLocalProfileId = localProfile.id;
+    selectProfile(data.profile.id, { focusPanel });
+    if (assignRunProfile) {
+      state.runProfileDraftId = data.profile.id;
+      elements.profileSelect.value = data.profile.id;
+    }
     render();
+    renderRunProfileReference();
     showToast(t("localProfileImported"));
-    return localProfile.existingProfileId;
+    return data.profile.id;
   }
-  const body = {
-    ...localProfile,
+  const body = localProfileSaveBody(localProfile, {
     id: uniqueProfileId(localProfile.id),
-    name: localProfile.name,
-    mode: "playwright",
-    status: "ready",
-    loginState: "unchecked"
-  };
-  delete body.browserName;
-  delete body.existingProfileId;
+    includeRuntimeDefaults: true
+  });
   const data = await api("/api/profiles", {
     method: "POST",
     body
   });
   await Promise.all([loadProfiles(), loadLocalBrowserProfiles(), loadAudit()]);
   state.selectedLocalProfileId = localProfile.id;
-  selectProfile(data.profile.id);
+  selectProfile(data.profile.id, { focusPanel });
+  if (assignRunProfile) {
+    state.runProfileDraftId = data.profile.id;
+    elements.profileSelect.value = data.profile.id;
+  }
   render();
+  renderRunProfileReference();
   showToast(t("localProfileImported"));
   return data.profile.id;
 }
@@ -4212,7 +4289,17 @@ async function resolveSelectedProfileId() {
   const localProfileId = localProfileIdFromOptionValue(value);
   if (!localProfileId) return value || null;
   const localProfile = state.localBrowserProfiles.find((profile) => profile.id === localProfileId);
-  return localProfile ? await importAndSelectLocalProfile(localProfile) : null;
+  return localProfile ? await importAndSelectLocalProfile(localProfile, { assignRunProfile: true }) : null;
+}
+
+async function editRunProfileFromRunConfig() {
+  try {
+    const profileId = await resolveSelectedProfileId();
+    if (!profileId) return;
+    selectProfile(profileId, { focusPanel: true });
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function checkSelectedProfile() {
@@ -4444,14 +4531,14 @@ function createBlankProfile() {
     rateLimit: { maxPerMinute: null }
   };
   state.profiles.unshift(profile);
-  selectProfile(id);
-  renderProfiles();
+  selectProfile(id, { focusPanel: true });
 }
 
 function selectTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("active"));
   document.querySelector(`#${name}Panel`).classList.add("active");
+  elements.editorPane.classList.toggle("profile-context-active", name === "profile");
 }
 
 function startPolling() {
@@ -4618,6 +4705,17 @@ function localProfileIdFromOptionValue(value) {
   return text.startsWith("local:") ? text.slice("local:".length) : "";
 }
 
+function displayProfileForSavedProfile(profile) {
+  if (!profile) return null;
+  const localProfile = localBrowserProfileForSavedProfile(profile);
+  if (!localProfile) return profile;
+  return {
+    ...profile,
+    name: savedProfileDisplayValue(profile.name, localProfile.name, localProfile),
+    accountLabel: savedProfileDisplayValue(profile.accountLabel, localProfile.accountLabel, localProfile)
+  };
+}
+
 function localBrowserProfileForSavedProfile(profile) {
   if (!profile) return null;
   return state.localBrowserProfiles.find((localProfile) => {
@@ -4626,6 +4724,73 @@ function localBrowserProfileForSavedProfile(profile) {
       && String(localProfile.profileDirectory ?? "") === String(profile.profileDirectory ?? "")
       && String(localProfile.browserChannel ?? "") === String(profile.browserChannel ?? "");
   }) ?? null;
+}
+
+function localProfileSaveBody(localProfile, { id, includeRuntimeDefaults, existingProfile = null }) {
+  const name = existingProfile
+    ? savedProfileDisplayValue(existingProfile.name, localProfile.name, localProfile)
+    : localProfile.name;
+  const accountLabel = existingProfile
+    ? savedProfileDisplayValue(existingProfile.accountLabel, localProfile.accountLabel, localProfile)
+    : localProfile.accountLabel;
+  const body = {
+    id,
+    name,
+    mode: "playwright",
+    platform: localProfile.platform ?? "",
+    accountLabel,
+    profileDir: localProfile.profileDir ?? "",
+    profileDirectory: localProfile.profileDirectory ?? "",
+    browserType: localProfile.browserType ?? "chromium",
+    browserChannel: localProfile.browserChannel ?? "",
+    headless: false
+  };
+  if (includeRuntimeDefaults) {
+    body.status = "ready";
+    body.loginState = "unchecked";
+    body.rateLimit = localProfile.rateLimit;
+    body.sessionCheck = localProfile.sessionCheck;
+    body.tags = localProfile.tags;
+    body.notes = localProfile.notes;
+  }
+  return body;
+}
+
+function savedProfileDisplayValue(savedValue, discoveredValue, localProfile) {
+  const saved = String(savedValue ?? "").trim();
+  const discovered = String(discoveredValue ?? "").trim();
+  if (!discovered) return saved;
+  if (!saved || isGenericLocalProfileLabel(saved, localProfile)) return discovered;
+  return saved;
+}
+
+function isGenericLocalProfileLabel(value, localProfile) {
+  const text = String(value ?? "").trim();
+  if (!text) return true;
+  const browserPrefix = String(localProfile?.browserName ?? "").trim();
+  const withoutBrowserPrefix = browserPrefix && text.toLowerCase().startsWith(`${browserPrefix.toLowerCase()} - `)
+    ? text.slice(browserPrefix.length + 3).trim()
+    : text;
+  return [text, withoutBrowserPrefix].some((candidate) => isGenericChromeProfileName(candidate, localProfile?.profileDirectory));
+}
+
+function isGenericChromeProfileName(value, profileDirectory) {
+  const compact = String(value ?? "").trim().replace(/\s+/g, "").toLowerCase();
+  const normalizedDirectory = String(profileDirectory ?? "").trim().replace(/\s+/g, "").toLowerCase();
+  if (!compact || compact === normalizedDirectory) return true;
+  return [
+    /^user\d+$/i,
+    /^person\d+$/i,
+    /^profile\d+$/i,
+    /^用户\d+$/i,
+    /^使用者\d+$/i,
+    /^个人资料\d+$/i,
+    /^您的chrome$/i,
+    /^你的chrome$/i,
+    /^yourchrome$/i,
+    /^chromeprofile$/i,
+    /^defaultprofile$/i
+  ].some((pattern) => pattern.test(compact));
 }
 
 function normalizeLocalPath(value) {

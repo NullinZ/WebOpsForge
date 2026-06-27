@@ -1,3 +1,5 @@
+import { readlink } from "node:fs/promises";
+import path from "node:path";
 import { createFileEvidenceStore } from "../evidence.mjs";
 import { WebOpsRunner } from "../runner.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
@@ -92,7 +94,10 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     let driver = null;
     try {
       leasedProfile = await store.leaseProfile(run.profileId, runId);
-      driver = await createDriver(run, leasedProfile, { chromeHandoffOpener });
+      driver = await createDriver(run, leasedProfile, {
+        chromeHandoffOpener,
+        workflow: workflowRecord.workflow
+      });
       const rateLimiter = createRunRateLimiter(run, leasedProfile);
       const runner = new WebOpsRunner({ driver, evidenceStore, rateLimiter, clock });
       const result = await runner.run(run.workflowOverride ?? workflowRecord.workflow, {
@@ -103,13 +108,13 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
       });
       const completedAt = clock();
       await runner.close();
+      await store.releaseProfile(run.profileId, runId, "ready");
       await store.updateRun(runId, {
         status: "completed",
         outputs: result.outputs,
         completedAt: completedAt.toISOString(),
         durationMs: completedAt.getTime() - startedAt.getTime()
       });
-      await store.releaseProfile(run.profileId, runId, "ready");
     } catch (error) {
       const completedAt = clock();
       const classification = classifyRunFailure(error);
@@ -125,10 +130,10 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
   }
 }
 
-async function createDriver(run, profile = null, { chromeHandoffOpener = null } = {}) {
+async function createDriver(run, profile = null, { chromeHandoffOpener = null, workflow = null } = {}) {
   const mergedConfig = mergeDriverConfig(run.driverConfig ?? {}, profile);
   if (run.mode === "playwright" || profile?.mode === "playwright") {
-    if (shouldUseChromeProfileHandoff(run, profile)) {
+    if (await shouldUseChromeProfileHandoff(run, profile, workflow)) {
       return createChromeProfileHandoffDriver({
         browserChannel: profile.browserChannel,
         profileDirectory: profile.profileDirectory,
@@ -140,19 +145,58 @@ async function createDriver(run, profile = null, { chromeHandoffOpener = null } 
   return createDryRunDriver(mergedConfig);
 }
 
-function shouldUseChromeProfileHandoff(run, profile) {
-  if (run.driverConfig?.chromeHandoff !== "front-window") return false;
+async function shouldUseChromeProfileHandoff(run, profile, workflow = null) {
   if (process.platform !== "darwin") return false;
-  if (run.debug?.mode !== "run-to-node") return false;
   if (!profile?.profileDirectory) return false;
   if (!["chrome", "chromium", "msedge"].includes(String(profile.browserChannel || "chrome"))) return false;
-  return isGotoOnlyWorkflow(run.workflowOverride);
+  const executableWorkflow = run.workflowOverride ?? workflow;
+  if (run.driverConfig?.chromeHandoff === "front-window") {
+    return workflowStartsWithGoto(executableWorkflow);
+  }
+  if (!profile.profileDir || !workflowStartsWithGoto(executableWorkflow)) return false;
+  return Boolean(await detectActiveProfileLock(profile.profileDir));
 }
 
-function isGotoOnlyWorkflow(workflow) {
+function workflowStartsWithGoto(workflow) {
   const steps = Array.isArray(workflow?.steps) ? workflow.steps : [];
   if (!steps.length) return false;
-  return steps.every((step) => step?.action === "goto" || step?.action === "checkpoint");
+  const first = firstBrowserStep(steps);
+  return first?.action === "goto";
+}
+
+function firstBrowserStep(steps) {
+  for (const step of steps) {
+    if (!step) continue;
+    if (step.action === "operation") {
+      const branch = operationUsesApiBranch(step) ? [step.api].filter(Boolean) : step.browserSteps;
+      const first = firstBrowserStep(Array.isArray(branch) ? branch : []);
+      if (first) return first;
+      continue;
+    }
+    return step;
+  }
+  return null;
+}
+
+function operationUsesApiBranch(step) {
+  const mode = String(step.mode ?? "").toLowerCase();
+  return mode === "api" || mode === "http";
+}
+
+async function detectActiveProfileLock(profileDir) {
+  try {
+    const target = await readlink(path.join(profileDir, "SingletonLock"));
+    const pid = Number(String(target).match(/-(\d+)$/)?.[1]);
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    try {
+      process.kill(pid, 0);
+      return { pid, target };
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
 }
 
 function mergeDriverConfig(driverConfig, profile) {
