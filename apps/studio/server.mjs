@@ -10,12 +10,14 @@ import { discoverLocalBrowserProfiles } from "../../src/studio/local-browser-pro
 import { releaseProfileLockOwner, waitForProfileLockRelease } from "../../src/studio/profile-locks.mjs";
 import { createProfileBrowserSessionPool } from "../../src/studio/profile-browser-session-pool.mjs";
 import { openProfileLoginWindow, probeProfileSession } from "../../src/studio/profile-session.mjs";
+import { authorizeStudioRequest, sendStudioAuthFailure, studioAuthConfigFromEnv } from "./auth-gate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT ?? 4177);
 const host = process.env.HOST ?? "127.0.0.1";
 const basePaths = parseBasePaths(process.env.BASE_PATHS ?? process.env.BASE_PATH ?? "");
+const authConfig = studioAuthConfigFromEnv(process.env);
 const store = new StudioStore();
 await store.init();
 const extensionExecutor = createExtensionExecutor();
@@ -35,6 +37,11 @@ const server = http.createServer(async (req, res) => {
     url.pathname = route.pathname;
     if (req.method === "OPTIONS" && route.pathname.startsWith("/api/")) {
       sendJson(res, 204, {});
+      return;
+    }
+    const authResult = await authorizeStudioRequest(req, authConfig);
+    if (!authResult.ok) {
+      sendStudioAuthFailure(req, res, authConfig, authResult);
       return;
     }
     if (route.pathname.startsWith("/api/")) {
