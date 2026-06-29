@@ -28,6 +28,8 @@ export type WorkflowAction =
   | "extractDetail"
   | "extractMedia"
   | "paginate"
+  | "checkSession"
+  | "setOutput"
   | "apiCall"
   | "operation"
   | "screenshot"
@@ -87,6 +89,7 @@ export interface BrowserDriver {
   extractDetail?(args: { fields: ExtractionFields; timeoutMs?: number | null }): Promise<{ value: Record<string, unknown> }>;
   extractMedia?(args: { selector: string; sources?: string[] | null; limit?: number | null; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<{ value: MediaExtractionRecord[]; count?: number }>;
   paginate?(args: { nextSelector: string; maxPages?: number | null; waitForSelector?: string | null; timeoutMs?: number | null }): Promise<{ value?: unknown; pagesVisited?: number; urls?: string[] }>;
+  checkSession?(args: { accountSelector?: string | null; loggedOutSelector?: string | null; timeoutMs?: number | null }): Promise<{ value?: unknown; loginState?: string; accountLabel?: string }>;
   apiCall?(args: ApiRequest): Promise<ApiResult>;
   screenshot?(args: { fullPage?: boolean; name?: string }): Promise<{ contentType?: string; bytes?: Uint8Array; text?: string } | null | undefined>;
   currentUrl?(): Promise<string>;

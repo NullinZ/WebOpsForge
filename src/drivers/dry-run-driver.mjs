@@ -1,4 +1,4 @@
-import { BrowserActionError } from "../errors.mjs";
+import { BrowserActionError, BrowserBlockedError } from "../errors.mjs";
 import { normalizeApiResult } from "../api-client.mjs";
 
 export function createDryRunDriver({ pages = {}, apiResponses = {}, initialUrl = "about:blank" } = {}) {
@@ -92,6 +92,40 @@ export function createDryRunDriver({ pages = {}, apiResponses = {}, initialUrl =
       log.push({ action: "paginate", nextSelector, pages: visited.length });
       return { nextSelector, pagesVisited: visited.length, urls: visited, value: visited };
     },
+    async checkSession({ accountSelector = null, loggedOutSelector = null }) {
+      const page = pages[currentUrl] ?? pages["*"] ?? {};
+      const loggedOutNode = loggedOutSelector ? page.selectors?.[loggedOutSelector] : null;
+      if (loggedOutNode && nodeIsVisible(loggedOutNode)) {
+        log.push({ action: "checkSession", loginState: "logged-out", loggedOutSelector });
+        throw new BrowserBlockedError("Login required for the current browser session", {
+          reason: "login_required",
+          details: {
+            accountSelector,
+            loggedOutSelector
+          }
+        });
+      }
+
+      const accountNode = accountSelector ? page.selectors?.[accountSelector] : null;
+      if (accountSelector && !accountNode) {
+        log.push({ action: "checkSession", loginState: "unknown", accountSelector });
+        throw new BrowserBlockedError("Authenticated account marker was not found", {
+          reason: "login_required",
+          details: {
+            accountSelector,
+            loggedOutSelector
+          }
+        });
+      }
+
+      const accountLabel = accountNode ? extractValue(accountNode, { mode: "text", values, selector: accountSelector }) : "";
+      const value = {
+        loginState: accountNode ? "authenticated" : "unknown",
+        accountLabel
+      };
+      log.push({ action: "checkSession", ...value, accountSelector, loggedOutSelector });
+      return { ...value, value };
+    },
     async screenshot({ name, fullPage = false }) {
       const text = `dry-run screenshot: ${name} ${currentUrl} fullPage=${fullPage}`;
       log.push({ action: "screenshot", name, fullPage });
@@ -142,6 +176,13 @@ function findSelector({ pages, currentUrl, selector }) {
     });
   }
   return node;
+}
+
+function nodeIsVisible(node) {
+  if (!node) return false;
+  if (node.visible === false || node.hidden === true) return false;
+  const style = node.style && typeof node.style === "object" ? node.style : {};
+  return style.display !== "none" && style.visibility !== "hidden";
 }
 
 function extractRecordFromFields({ node, fields, values, currentUrl, index = null }) {

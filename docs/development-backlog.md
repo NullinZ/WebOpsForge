@@ -96,6 +96,15 @@ This backlog tracks productization items that should not be left as code-only TO
 - Acceptance: Runs against a busy real Chrome profile preserve the existing login/plugin session, open the target URL, then continue browser actions through CDP or the extension executor without falling back to Playwright profile takeover.
 - Evidence: 2026-06-27 live `workflow-mqme1i81` run `run_e6f4181de8f8460aa4` opened `https://douyin.com/` through handoff, then correctly stopped at `fill` with `chrome_profile_handoff_unsupported_action`. Closed after adding the Studio extension-executor job API, picker-extension polling executor, handoff-driver executor dispatch, and tests covering locked Chrome profile completion through the extension executor.
 
+### WOF-P1-012 Douyin Live Selector/Profile Verification
+
+- Priority: P1
+- Status: open
+- Area: real-site workflow validation, profiles, selector picker
+- Summary: Validate the Douyin DM group workflow against a logged-in local browser profile, refresh selectors with the picker, and run once to the approval gate before allowing any real outbound message.
+- Acceptance: A logged-in profile can open Douyin, pass `checkSession`, open DM, select the target group, extract visible messages, generate `replyDraft`, and block at `approval` with evidence. A second approved run may send only after explicit operator approval.
+- Evidence: 2026-06-29 dry-run and isolated Studio API validation passed; Chrome real-site probe reached a Douyin page but browser automation timed out before a DOM/login-state read. No credentials were stored and no real message was sent.
+
 ### WOF-P2-010 Public Demo, Docs, And Accessibility QA
 
 - Priority: P2

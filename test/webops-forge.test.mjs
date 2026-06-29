@@ -421,6 +421,38 @@ test("hands front Chrome actions to an extension executor", async () => {
   assert.equal(result.actualValue, "chrome");
 });
 
+test("hands front Chrome session checks to an extension executor", async () => {
+  const executorCalls = [];
+  const driver = createChromeProfileHandoffDriver({
+    browserChannel: "chrome",
+    profileDirectory: "Profile 2",
+    opener: async () => {},
+    executor: {
+      async run(payload, options) {
+        executorCalls.push({ payload, options });
+        return {
+          loginState: "authenticated",
+          accountLabel: "家具运营号",
+          value: { loginState: "authenticated", accountLabel: "家具运营号" }
+        };
+      }
+    }
+  });
+
+  await driver.goto({ url: "https://douyin.com", timeoutMs: 7000 });
+  const result = await driver.checkSession({
+    accountSelector: ".account-name",
+    loggedOutSelector: ".login-button",
+    timeoutMs: 1200
+  });
+
+  assert.equal(executorCalls.length, 1);
+  assert.equal(executorCalls[0].payload.action, "checkSession");
+  assert.equal(executorCalls[0].payload.params.accountSelector, ".account-name");
+  assert.equal(result.via, "chrome-extension-executor");
+  assert.equal(result.value.accountLabel, "家具运营号");
+});
+
 test("hands front Chrome actions to a native AppleScript executor when the extension is inactive", async () => {
   const calls = [];
   const nativeCalls = [];
@@ -554,6 +586,88 @@ test("asserts workflow outputs without depending on page selectors", async () =>
   const result = await runner.run(workflow);
 
   assert.equal(result.outputs.title, "Clear storage case supplier");
+});
+
+test("checks session state and writes templated outputs", async () => {
+  const workflow = defineWorkflow({
+    name: "session-and-template-output-test",
+    steps: [
+      { id: "open", action: "goto", url: "https://example.local/inbox" },
+      {
+        id: "checkSession",
+        action: "checkSession",
+        accountSelector: ".account-name",
+        loggedOutSelector: ".login-button",
+        name: "session"
+      },
+      { id: "extractMessage", action: "extract", selector: ".latest-message", name: "latestMessage" },
+      { id: "draftReply", action: "setOutput", name: "replyDraft", value: "已收到：{{outputs.latestMessage}}" },
+      { id: "fillReply", action: "fill", selector: ".reply-box", value: "{{outputs.replyDraft}}" }
+    ]
+  });
+  const driver = createDryRunDriver({
+    pages: {
+      "https://example.local/inbox": {
+        selectors: {
+          ".account-name": { text: "家具运营号" },
+          ".latest-message": { text: "今天下午发货吗？" },
+          ".reply-box": { value: "" }
+        }
+      }
+    }
+  });
+  const runner = new WebOpsRunner({ driver, evidenceStore: createMemoryEvidenceStore() });
+
+  const result = await runner.run(workflow);
+
+  assert.deepEqual(result.outputs.session, {
+    loginState: "authenticated",
+    accountLabel: "家具运营号"
+  });
+  assert.equal(result.outputs.replyDraft, "已收到：今天下午发货吗？");
+  assert.deepEqual(driver.log.map((item) => item.action), [
+    "goto",
+    "checkSession",
+    "extract",
+    "fill"
+  ]);
+});
+
+test("blocks session checks when a logged-out marker is visible", async () => {
+  const workflow = defineWorkflow({
+    name: "session-logged-out-test",
+    steps: [
+      { id: "open", action: "goto", url: "https://example.local/inbox" },
+      {
+        id: "checkSession",
+        action: "checkSession",
+        accountSelector: ".account-name",
+        loggedOutSelector: ".login-button",
+        name: "session"
+      }
+    ]
+  });
+  const runner = new WebOpsRunner({
+    driver: createDryRunDriver({
+      pages: {
+        "https://example.local/inbox": {
+          selectors: {
+            ".login-button": { text: "登录" }
+          }
+        }
+      }
+    }),
+    evidenceStore: createMemoryEvidenceStore()
+  });
+
+  await assert.rejects(
+    runner.run(workflow),
+    (error) => {
+      assert.equal(error.code, "BROWSER_BLOCKED");
+      assert.equal(error.details.reason, "login_required");
+      return true;
+    }
+  );
 });
 
 test("extracts structured lists, details, and media into workflow outputs", async () => {

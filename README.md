@@ -258,6 +258,8 @@ Supported actions:
 - `extractDetail`: extract a page or panel into a named field object.
 - `extractMedia`: extract image/video URLs, posters, source candidates, and media attributes.
 - `paginate`: follow configured next-page links and write visited URLs when named.
+- `checkSession`: verify logged-in state with an account selector and optional logged-out selector.
+- `setOutput`: write a templated value into workflow outputs.
 - `apiCall`: call an HTTP endpoint and optionally write the response value to outputs.
 - `operation`: wrap one business operation with switchable browser and API branches.
 - `approval`: require a policy or context approval before continuing.

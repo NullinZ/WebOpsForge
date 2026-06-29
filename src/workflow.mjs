@@ -11,6 +11,8 @@ const SUPPORTED_ACTIONS = new Set([
   "extractDetail",
   "extractMedia",
   "paginate",
+  "checkSession",
+  "setOutput",
   "apiCall",
   "operation",
   "screenshot",
@@ -31,6 +33,8 @@ const REQUIRED_FIELDS = {
   extractDetail: ["fields", "name"],
   extractMedia: ["selector", "name"],
   paginate: ["nextSelector"],
+  checkSession: [],
+  setOutput: ["name", "value"],
   apiCall: ["url"],
   operation: [],
   screenshot: ["name"],
@@ -90,6 +94,10 @@ function normalizeStep(step, index, seen, { parentId = null } = {}) {
     if (step[field] == null || step[field] === "") {
       throw new ActionValidationError(`Step ${id} is missing required field: ${field}`, { stepId: id });
     }
+  }
+
+  if (action === "checkSession" && !step.accountSelector && !step.loggedOutSelector) {
+    throw new ActionValidationError(`Step ${id} must define accountSelector or loggedOutSelector`, { stepId: id });
   }
 
   const normalized = {

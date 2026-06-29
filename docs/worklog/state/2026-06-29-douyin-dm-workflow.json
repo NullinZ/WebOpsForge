@@ -1,0 +1,45 @@
+{
+  "task_id": "2026-06-29-douyin-dm-workflow",
+  "objective": "让 WebOpsForge 通过配置和必要改进支持抖音私信自动化链路：打开抖音、检查登录态、进入私信、找到“家具大师展厅总部”群、读取消息并回复。",
+  "cwd": "/Users/nullin/GitHubO/WebOpsForge",
+  "repos": [
+    {
+      "path": "/Users/nullin/GitHubO/WebOpsForge",
+      "branch": "main",
+      "dirty_expected": true
+    }
+  ],
+  "phase": "complete-with-live-site-followup",
+  "completed": [
+    "goal-established",
+    "long-task-log-created",
+    "phase-1-capability-audit",
+    "phase-2-implementation",
+    "phase-3-validation",
+    "phase-4-handoff"
+  ],
+  "in_progress": null,
+  "pending": [],
+  "last_checkpoint": "2026-06-29T11:45:54+08:00",
+  "next_action": "真实抖音验证从 WOF-P1-012 继续：用登录后的本机 profile 替换模板 selector，先运行到 approval 阻断点，再决定是否批准发送。",
+  "artifacts": [
+    "docs/worklog/2026-06-29-douyin-dm-workflow.md",
+    "docs/worklog/state/2026-06-29-douyin-dm-workflow.json",
+    "backups/douyin-dm-workflow-20260629/",
+    "backups/douyin-dm-workflow-20260629/studio-action-picker.png",
+    "examples/douyin-dm-workflow.mjs",
+    "examples/douyin-dm-workflow.bundle.json",
+    "docs/DOUYIN_DM_WORKFLOW.md",
+    "docs/development-backlog.md"
+  ],
+  "validation": {
+    "unit_tests": "passed: npm test, 47 pass / 0 fail",
+    "workflow_dry_run": "passed: node examples/douyin-dm-workflow.mjs",
+    "studio": "passed: API import/validate/run and UI action picker check at http://127.0.0.1:4187",
+    "real_douyin": "blocked-before-login-read: Chrome probe reached https://www.douyin.com/jingxuan but timed out before DOM/login-state read; no credentials used and no real reply sent"
+  },
+  "blockers": [
+    "Chrome real-site probe timed out before login-state/DM DOM inspection."
+  ],
+  "notes_for_resume": "不要保存抖音凭证或完整私信内容。真实回复动作需要 approval/dry-run 语义；模板已支持配置链路，真实抖音运行前先用 picker 替换 selector，并从 WOF-P1-012 继续。"
+}

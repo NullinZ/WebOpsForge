@@ -389,6 +389,8 @@
         return extractDetailWebOpsTarget(params, timeoutMs);
       case "extractMedia":
         return extractMediaWebOpsTarget(params, timeoutMs);
+      case "checkSession":
+        return checkSessionWebOpsTarget(params, timeoutMs);
       default:
         throw executorError(`Unsupported extension executor action: ${job?.action || ""}`, {
           reason: "unsupported_extension_executor_action",
@@ -529,6 +531,45 @@
       value: rows,
       count: rows.length,
       target: resolved.target,
+      url: location.href
+    };
+  }
+
+  async function checkSessionWebOpsTarget(params, timeoutMs) {
+    const loggedOutSelector = params.loggedOutSelector || "";
+    if (loggedOutSelector) {
+      const loggedOut = await waitForResolvedTarget({ selector: loggedOutSelector }, "attached_or_missing", Math.min(timeoutMs, 1200));
+      if (loggedOut.element && isVisibleElement(loggedOut.element)) {
+        throw executorError("Login required for the current browser session", {
+          reason: "login_required",
+          accountSelector: params.accountSelector || "",
+          loggedOutSelector
+        });
+      }
+    }
+
+    const accountSelector = params.accountSelector || "";
+    if (!accountSelector) {
+      return {
+        loginState: "unknown",
+        accountLabel: "",
+        value: { loginState: "unknown", accountLabel: "" },
+        url: location.href
+      };
+    }
+
+    const account = await waitForResolvedTarget({ selector: accountSelector }, "attached", timeoutMs);
+    const accountLabel = cleanPickerText(account.element?.textContent || currentElementValue(account.element) || "");
+    const value = {
+      loginState: "authenticated",
+      accountLabel
+    };
+    return {
+      ...value,
+      accountSelector,
+      loggedOutSelector,
+      value,
+      target: account.target,
       url: location.href
     };
   }

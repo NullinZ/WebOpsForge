@@ -186,6 +186,10 @@ export class WebOpsRunner {
           waitForSelector: step.waitForSelector ?? null,
           timeoutMs
         });
+      case "checkSession":
+        return this.#checkSession(step, timeoutMs);
+      case "setOutput":
+        return { name: step.name, value: step.value };
       case "apiCall":
         return executeApiCall({ step, driver: this.driver, apiClient: this.apiClient, timeoutMs });
       case "operation":
@@ -215,6 +219,20 @@ export class WebOpsRunner {
       });
     }
     return { ok: true, selector: step.selector, includes: step.includes };
+  }
+
+  async #checkSession(step, timeoutMs) {
+    if (!this.driver.checkSession) {
+      throw new BrowserActionError(`Driver does not support checkSession`, {
+        stepId: step.id,
+        details: { reason: "unsupported_driver_action", action: "checkSession" }
+      });
+    }
+    return this.driver.checkSession({
+      accountSelector: step.accountSelector ?? null,
+      loggedOutSelector: step.loggedOutSelector ?? null,
+      timeoutMs
+    });
   }
 
   async #assertOutput(step, state) {
@@ -332,6 +350,15 @@ function normalizeOperationMode(mode) {
 
 function applyStepOutput(step, result, state) {
   if (["extract", "extractList", "extractDetail", "extractMedia"].includes(step.action)) {
+    state.outputs[step.name] = result.value;
+    return;
+  }
+  if (step.action === "checkSession" && (step.name || step.output || step.outputName)) {
+    const name = step.name ?? step.output ?? step.outputName;
+    state.outputs[name] = result.value ?? result;
+    return;
+  }
+  if (step.action === "setOutput") {
     state.outputs[step.name] = result.value;
     return;
   }

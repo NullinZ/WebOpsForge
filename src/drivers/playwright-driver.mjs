@@ -1,4 +1,4 @@
-import { BrowserActionError } from "../errors.mjs";
+import { BrowserActionError, BrowserBlockedError } from "../errors.mjs";
 import { normalizeApiResult } from "../api-client.mjs";
 import { detectActiveProfileLock } from "../studio/profile-locks.mjs";
 
@@ -229,6 +229,53 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
         if (after === before && urls.length > 1 && urls.at(-2) === after) break;
       }
       return { nextSelector, pagesVisited: urls.length, urls, value: urls };
+    },
+    async checkSession({ accountSelector = null, loggedOutSelector = null, timeoutMs }) {
+      if (loggedOutSelector) {
+        const loggedOut = page.locator(loggedOutSelector).first();
+        const loggedOutVisible = await loggedOut.isVisible({ timeout: Math.min(Number(timeoutMs ?? 10_000), 1200) }).catch(() => false);
+        if (loggedOutVisible) {
+          throw new BrowserBlockedError("Login required for the current browser session", {
+            reason: "login_required",
+            details: {
+              accountSelector,
+              loggedOutSelector,
+              url: page.url()
+            }
+          });
+        }
+      }
+
+      let accountLabel = "";
+      if (accountSelector) {
+        const account = page.locator(accountSelector).first();
+        try {
+          await account.waitFor({ state: "attached", timeout: timeoutMs });
+          accountLabel = await account.innerText({ timeout: Math.min(Number(timeoutMs ?? 10_000), 1200) }).catch(() => "");
+        } catch (error) {
+          throw new BrowserBlockedError("Authenticated account marker was not found", {
+            reason: "login_required",
+            cause: error,
+            details: {
+              accountSelector,
+              loggedOutSelector,
+              url: page.url()
+            }
+          });
+        }
+      }
+
+      const value = {
+        loginState: accountSelector ? "authenticated" : "unknown",
+        accountLabel: accountLabel.replace(/\s+/g, " ").trim()
+      };
+      return {
+        ...value,
+        accountSelector,
+        loggedOutSelector,
+        url: page.url(),
+        value
+      };
     },
     async screenshot({ fullPage = false }) {
       const bytes = await page.screenshot({ fullPage, type: "png" });

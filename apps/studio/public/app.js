@@ -753,6 +753,7 @@ const ACTION_LABELS = {
     approval: "Approval",
     assertOutput: "Assert output",
     assertText: "Assert text",
+    checkSession: "Check session",
     checkpoint: "Checkpoint",
     click: "Click",
     extract: "Extract",
@@ -765,6 +766,7 @@ const ACTION_LABELS = {
     paginate: "Paginate",
     press: "Press key",
     screenshot: "Screenshot",
+    setOutput: "Set output",
     waitFor: "Wait for element"
   },
   zh: {
@@ -772,6 +774,7 @@ const ACTION_LABELS = {
     approval: "审批",
     assertOutput: "校验输出",
     assertText: "校验文本",
+    checkSession: "检查登录态",
     checkpoint: "检查点",
     click: "点击",
     extract: "提取",
@@ -784,6 +787,7 @@ const ACTION_LABELS = {
     paginate: "翻页",
     press: "按键",
     screenshot: "截图",
+    setOutput: "设置输出",
     waitFor: "等待元素"
   }
 };
@@ -800,6 +804,8 @@ const ACTION_PICKER_VALUES = {
     "extractDetail",
     "extractMedia",
     "paginate",
+    "checkSession",
+    "setOutput",
     "apiCall",
     "operation",
     "screenshot",
@@ -819,6 +825,8 @@ const ACTION_PICKER_VALUES = {
     "extractDetail",
     "extractMedia",
     "paginate",
+    "checkSession",
+    "setOutput",
     "screenshot",
     "apiCall",
     "approval"
@@ -4454,6 +4462,8 @@ function actionToWorkflowStep(action) {
   if (action.actionType === "waitFor") return { id, action: "waitFor", selector: action.selector };
   if (action.actionType === "press") return { id, action: "press", selector: action.selector || null, key: action.valueTemplate || "Enter" };
   if (action.actionType === "extract") return { id, action: "extract", selector: action.selector, name: action.outputName || id };
+  if (action.actionType === "checkSession") return { id, action: "checkSession", accountSelector: action.selector, loggedOutSelector: action.valueTemplate || "", name: action.outputName || "session" };
+  if (action.actionType === "setOutput") return { id, action: "setOutput", name: action.outputName || id, value: action.valueTemplate };
   if (action.actionType === "screenshot") return { id, action: "screenshot", name: action.outputName || id };
   if (action.actionType === "approval") return { id, action: "approval", name: action.outputName || id, prompt: action.description || action.name };
   return { id, action: "click", selector: action.selector };

@@ -1,0 +1,211 @@
+{
+  "workflows": [
+    {
+      "id": "douyin-dm-group-read-reply",
+      "name": "Douyin DM group read and reply",
+      "description": "Template workflow for reading a named Douyin DM group and sending a reviewed reply.",
+      "workflow": {
+        "name": "douyin-dm-group-read-and-reply",
+        "version": "0.1.0",
+        "description": "Open Douyin, verify session, read a named DM group, draft a reply from the latest visible message, and send after approval.",
+        "defaults": {
+          "timeoutMs": 15000,
+          "screenshot": "on-failure"
+        },
+        "metadata": {
+          "platform": "douyin",
+          "safety": "Requires approval before sending a reply."
+        },
+        "steps": [
+          {
+            "id": "openDouyin",
+            "action": "goto",
+            "url": "https://www.douyin.com/"
+          },
+          {
+            "id": "checkLogin",
+            "action": "checkSession",
+            "accountSelector": "{{input.accountSelector}}",
+            "loggedOutSelector": "{{input.loggedOutSelector}}",
+            "name": "session"
+          },
+          {
+            "id": "openMessages",
+            "action": "click",
+            "selector": "{{input.dmEntrySelector}}"
+          },
+          {
+            "id": "waitConversationList",
+            "action": "waitFor",
+            "selector": "{{input.conversationListSelector}}"
+          },
+          {
+            "id": "openTargetGroup",
+            "action": "click",
+            "selector": "{{input.groupSelector}}",
+            "targetIdentity": {
+              "version": 1,
+              "text": "{{input.groupName}}",
+              "matchPolicy": {
+                "minScore": 18,
+                "ambiguityMargin": 4,
+                "requireVisible": true
+              }
+            }
+          },
+          {
+            "id": "waitMessages",
+            "action": "waitFor",
+            "selector": "{{input.messageListSelector}}"
+          },
+          {
+            "id": "extractVisibleMessages",
+            "action": "extractList",
+            "selector": "{{input.messageRowSelector}}",
+            "name": "messages",
+            "limit": "{{input.messageLimit}}",
+            "fields": {
+              "sender": {
+                "selector": ".message-sender",
+                "default": ""
+              },
+              "text": {
+                "selector": ".message-text",
+                "required": true
+              },
+              "time": {
+                "selector": ".message-time",
+                "default": ""
+              }
+            }
+          },
+          {
+            "id": "extractLatestMessage",
+            "action": "extract",
+            "selector": "{{input.latestMessageTextSelector}}",
+            "name": "latestMessage"
+          },
+          {
+            "id": "draftReply",
+            "action": "setOutput",
+            "name": "replyDraft",
+            "value": "收到，已看到这条消息：{{outputs.latestMessage}}"
+          },
+          {
+            "id": "captureBeforeReply",
+            "action": "screenshot",
+            "name": "douyin-dm-before-reply"
+          },
+          {
+            "id": "approveReply",
+            "action": "approval",
+            "name": "sendDouyinReply",
+            "prompt": "Confirm sending reply to {{input.groupName}}: {{outputs.replyDraft}}"
+          },
+          {
+            "id": "fillReply",
+            "action": "fill",
+            "selector": "{{input.replyBoxSelector}}",
+            "value": "{{outputs.replyDraft}}"
+          },
+          {
+            "id": "sendReply",
+            "action": "click",
+            "selector": "{{input.sendButtonSelector}}"
+          },
+          {
+            "id": "captureAfterReply",
+            "action": "screenshot",
+            "name": "douyin-dm-after-reply"
+          }
+        ]
+      },
+      "defaultRun": {
+        "mode": "dry-run",
+        "input": {
+          "groupName": "家具大师展厅总部",
+          "accountSelector": ".douyin-account",
+          "loggedOutSelector": ".douyin-login-button",
+          "dmEntrySelector": ".douyin-dm-entry",
+          "conversationListSelector": ".conversation-list",
+          "groupSelector": ".conversation-item",
+          "messageListSelector": ".message-list",
+          "messageRowSelector": ".message-row",
+          "latestMessageTextSelector": ".latest-message-text",
+          "replyBoxSelector": ".reply-editor",
+          "sendButtonSelector": ".send-reply",
+          "messageLimit": 5
+        },
+        "context": {
+          "approvals": {}
+        },
+        "driverConfig": {
+          "pages": {
+            "https://www.douyin.com/": {
+              "selectors": {
+                ".douyin-account": {
+                  "text": "家具运营号"
+                },
+                ".douyin-login-button": {
+                  "text": "登录",
+                  "hidden": true
+                },
+                ".douyin-dm-entry": {
+                  "text": "私信"
+                },
+                ".conversation-list": {
+                  "text": "会话列表"
+                },
+                ".conversation-item": {
+                  "text": "家具大师展厅总部"
+                },
+                ".message-list": {
+                  "text": "消息列表"
+                },
+                ".message-row": {
+                  "items": [
+                    {
+                      "selectors": {
+                        ".message-sender": {
+                          "text": "展厅总部"
+                        },
+                        ".message-text": {
+                          "text": "今天下午能确认展厅样品清单吗？"
+                        },
+                        ".message-time": {
+                          "text": "11:18"
+                        }
+                      }
+                    },
+                    {
+                      "selectors": {
+                        ".message-sender": {
+                          "text": "我"
+                        },
+                        ".message-text": {
+                          "text": "我先看一下。"
+                        },
+                        ".message-time": {
+                          "text": "11:20"
+                        }
+                      }
+                    }
+                  ]
+                },
+                ".latest-message-text": {
+                  "text": "今天下午能确认展厅样品清单吗？"
+                },
+                ".reply-editor": {
+                  "value": ""
+                },
+                ".send-reply": {
+                  "text": "发送"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

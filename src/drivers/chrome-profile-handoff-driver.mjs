@@ -57,6 +57,7 @@ export function createChromeProfileHandoffDriver({
     extractList: runViaExecutor("extractList", () => currentUrl, executor, nativeExecutor),
     extractDetail: runViaExecutor("extractDetail", () => currentUrl, executor, nativeExecutor),
     extractMedia: runViaExecutor("extractMedia", () => currentUrl, executor, nativeExecutor),
+    checkSession: runViaExecutor("checkSession", () => currentUrl, executor, nativeExecutor),
     paginate: unsupported("paginate", () => currentUrl),
     screenshot: unsupported("screenshot", () => currentUrl),
     apiCall: unsupported("apiCall", () => currentUrl)

@@ -257,6 +257,30 @@ try {
     }));
     return JSON.stringify({ ok: true, result: { selector: resolved.selector, value: rows, count: rows.length, target: resolved.target, url: location.href } });
   }
+  if (action === "checkSession") {
+    if (params.loggedOutSelector) {
+      const nodes = Array.from(document.querySelectorAll(params.loggedOutSelector));
+      if (nodes.some(visible)) {
+        const error = new Error("Login required for the current browser session");
+        error.reason = "login_required";
+        error.details = { accountSelector: params.accountSelector || "", loggedOutSelector: params.loggedOutSelector || "", url: location.href };
+        throw error;
+      }
+    }
+    if (!params.accountSelector) {
+      const value = { loginState: "unknown", accountLabel: "" };
+      return JSON.stringify({ ok: true, result: { ...value, value, url: location.href } });
+    }
+    const node = document.querySelector(params.accountSelector);
+    if (!node) {
+      const error = new Error("Authenticated account marker was not found");
+      error.reason = "login_required";
+      error.details = { accountSelector: params.accountSelector || "", loggedOutSelector: params.loggedOutSelector || "", url: location.href };
+      throw error;
+    }
+    const value = { loginState: "authenticated", accountLabel: clean(node.textContent || currentValue(node)) };
+    return JSON.stringify({ ok: true, result: { ...value, accountSelector: params.accountSelector || "", loggedOutSelector: params.loggedOutSelector || "", value, url: location.href } });
+  }
   throw Object.assign(new Error("Unsupported AppleScript executor action: " + action), { reason: "unsupported_applescript_executor_action" });
 } catch (error) {
   return JSON.stringify({ ok: false, error: { message: error.message || String(error), reason: error.reason || "front_chrome_action_failed", details: error.details || {} } });
