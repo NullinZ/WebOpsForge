@@ -2,9 +2,10 @@
   "manifest_version": 3,
   "name": "WebOps Forge Picker",
   "description": "Pick visible page elements and send stable target identity to WebOps Forge Studio.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "permissions": [
     "activeTab",
+    "alarms",
     "sidePanel",
     "scripting",
     "storage",

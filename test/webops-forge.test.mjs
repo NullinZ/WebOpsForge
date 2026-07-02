@@ -84,6 +84,32 @@ test("runs a workflow and records evidence", async () => {
   assert.equal(evidenceStore.artifacts().size, 1);
 });
 
+test("clicks visible text without a brittle selector", async () => {
+  const workflow = defineWorkflow({
+    name: "click-text-test",
+    steps: [
+      { id: "open", action: "goto", url: "https://example.local/inbox" },
+      { id: "openMessages", action: "clickText", text: "私信" }
+    ]
+  });
+  const driver = createDryRunDriver({
+    pages: {
+      "https://example.local/inbox": {
+        selectors: {
+          ".dm-entry": { text: "私信" }
+        }
+      }
+    }
+  });
+  const runner = new WebOpsRunner({ driver, evidenceStore: createMemoryEvidenceStore() });
+
+  const result = await runner.run(workflow);
+
+  assert.equal(result.status, "completed");
+  assert.deepEqual(driver.log.map((item) => item.action), ["goto", "clickText"]);
+  assert.equal(driver.log[1].selector, ".dm-entry");
+});
+
 test("applies a random delay event before every workflow step", async () => {
   const evidenceStore = createMemoryEvidenceStore();
   const runner = new WebOpsRunner({
@@ -421,6 +447,35 @@ test("hands front Chrome actions to an extension executor", async () => {
   assert.equal(result.actualValue, "chrome");
 });
 
+test("hands front Chrome text clicks to an extension executor", async () => {
+  const executorCalls = [];
+  const driver = createChromeProfileHandoffDriver({
+    browserChannel: "chrome",
+    profileDirectory: "Profile 2",
+    opener: async () => {},
+    executor: {
+      async run(payload, options) {
+        executorCalls.push({ payload, options });
+        return {
+          clicked: true,
+          text: payload.params.text,
+          target: { strategy: "text", text: payload.params.text }
+        };
+      }
+    }
+  });
+
+  await driver.goto({ url: "https://douyin.com", timeoutMs: 7000 });
+  const result = await driver.clickText({ text: "私信", timeoutMs: 1200 });
+
+  assert.equal(executorCalls.length, 1);
+  assert.equal(executorCalls[0].payload.action, "clickText");
+  assert.equal(executorCalls[0].payload.params.text, "私信");
+  assert.equal(executorCalls[0].options.timeoutMs, 1200);
+  assert.equal(result.via, "chrome-extension-executor");
+  assert.equal(result.clicked, true);
+});
+
 test("hands front Chrome session checks to an extension executor", async () => {
   const executorCalls = [];
   const driver = createChromeProfileHandoffDriver({
@@ -494,6 +549,46 @@ test("hands front Chrome actions to a native AppleScript executor when the exten
   assert.equal(result.actualValue, "chrome");
 });
 
+test("gives a recently seen sleeping extension executor a wake window", async () => {
+  const executorCalls = [];
+  const nativeCalls = [];
+  const driver = createChromeProfileHandoffDriver({
+    browserChannel: "chrome",
+    profileDirectory: "Profile 2",
+    opener: async () => {},
+    executor: {
+      status() {
+        return { lastSeenAt: new Date(Date.now() - 60_000).toISOString() };
+      },
+      async run(payload, options) {
+        executorCalls.push({ payload, options });
+        return {
+          filled: true,
+          value: payload.params.value,
+          actualValue: payload.params.value,
+          target: { selector: payload.params.selector, count: 1, visibleCount: 1 }
+        };
+      }
+    },
+    nativeExecutor: {
+      async run(payload, options) {
+        nativeCalls.push({ payload, options });
+        return { via: "mac-chrome-applescript" };
+      }
+    }
+  });
+
+  await driver.goto({ url: "https://douyin.com", timeoutMs: 7000 });
+  const result = await driver.fill({ selector: "#q", value: "chrome", timeoutMs: 1200 });
+
+  assert.equal(executorCalls.length, 1);
+  assert.equal(nativeCalls.length, 0);
+  assert.equal(executorCalls[0].payload.action, "fill");
+  assert.equal(executorCalls[0].options.timeoutMs, 35_000);
+  assert.equal(result.via, "chrome-extension-executor");
+  assert.equal(result.actualValue, "chrome");
+});
+
 test("reports disabled Chrome Apple Events JavaScript from the native executor", async () => {
   const executor = createMacChromeAppleScriptExecutor({
     osascript: async () => {
@@ -517,6 +612,36 @@ test("reports disabled Chrome Apple Events JavaScript from the native executor",
       return true;
     }
   );
+});
+
+test("native AppleScript executor includes text click support", async () => {
+  const executor = createMacChromeAppleScriptExecutor({
+    osascript: async (script) => {
+      assert.match(script, /clickText/);
+      assert.match(script, /resolveTextTarget/);
+      return JSON.stringify({
+        ok: true,
+        result: {
+          clicked: true,
+          text: "私信",
+          target: { strategy: "text", text: "私信" },
+          url: "https://douyin.com/"
+        }
+      });
+    }
+  });
+
+  if (!executor) return;
+
+  const result = await executor.run({
+    action: "clickText",
+    currentUrl: "https://douyin.com/",
+    params: { text: "私信", timeoutMs: 1000 }
+  }, { timeoutMs: 1000 });
+
+  assert.equal(result.via, "mac-chrome-applescript");
+  assert.equal(result.clicked, true);
+  assert.equal(result.text, "私信");
 });
 
 test("writes file evidence records and artifacts", async () => {

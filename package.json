@@ -30,8 +30,9 @@
   "scripts": {
     "start": "node apps/studio/server.mjs",
     "studio": "node apps/studio/server.mjs",
+    "douyin:preflight": "node examples/douyin-live-preflight.mjs",
     "test": "node --test",
-    "check": "npm test && node examples/dry-run-search.mjs",
+    "check": "npm test && node --check examples/douyin-live-preflight.mjs && node examples/dry-run-search.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },
   "keywords": [

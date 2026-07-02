@@ -24,6 +24,11 @@ export function createDryRunDriver({ pages = {}, apiResponses = {}, initialUrl =
       log.push({ action: "click", selector });
       return { selector };
     },
+    async clickText({ text, selector = null, exact = true }) {
+      const match = findTextNode({ pages, currentUrl, text, selector, exact });
+      log.push({ action: "clickText", text, selector: match.selector });
+      return { text, selector: match.selector, clicked: true, target: { strategy: "text", text: match.text } };
+    },
     async fill({ selector, value, redact = false }) {
       findSelector({ pages, currentUrl, selector });
       values.set(selector, value);
@@ -165,6 +170,24 @@ function findApiResponse(apiResponses, request) {
     };
   }
   return response;
+}
+
+function findTextNode({ pages, currentUrl, text, selector = null, exact = true }) {
+  const page = pages[currentUrl] ?? pages["*"] ?? {};
+  const wanted = normalizeText(text);
+  for (const [candidateSelector, node] of Object.entries(page.selectors ?? {})) {
+    if (selector && candidateSelector !== selector) continue;
+    const actual = normalizeText(extractValue(node, { mode: "text", values: new Map(), selector: candidateSelector }));
+    const matched = exact ? actual === wanted : actual.includes(wanted);
+    if (matched) return { selector: candidateSelector, text: actual, node };
+  }
+  throw new BrowserActionError(`Text not found: ${text}`, {
+    details: { reason: "text_not_found", text, selector }
+  });
+}
+
+function normalizeText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function findSelector({ pages, currentUrl, selector }) {

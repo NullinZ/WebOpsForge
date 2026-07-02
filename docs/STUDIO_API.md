@@ -103,7 +103,7 @@ Request:
 
 ## Chrome Extension Executor
 
-The bundled Chrome extension also acts as the executor for already-open front Chrome profiles. When a Chrome profile is locked by an ordinary browser session, Studio can hand off the first `goto` to the visible browser and then dispatch `fill`, `click`, `waitFor`, and extraction jobs through the extension.
+The bundled Chrome extension also acts as the executor for already-open front Chrome profiles. When a Chrome profile is locked by an ordinary browser session, Studio can hand off the first `goto` to the visible browser and then dispatch `fill`, `click`, `clickText`, `waitFor`, `checkSession`, and extraction jobs through the extension. The extension uses a Chrome alarm to restart executor polling after the Manifest V3 service worker sleeps; reload the unpacked extension after manifest changes.
 
 After editing files in `apps/picker-extension`, reload the unpacked `WebOps Forge Picker` extension in `chrome://extensions` before testing front Chrome execution.
 

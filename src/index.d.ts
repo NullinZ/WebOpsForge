@@ -21,6 +21,7 @@ export type WorkflowAction =
   | "goto"
   | "waitFor"
   | "click"
+  | "clickText"
   | "fill"
   | "press"
   | "extract"
@@ -82,6 +83,7 @@ export interface BrowserDriver {
   goto?(args: { url: string; timeoutMs?: number | null; state?: RunnerState }): Promise<unknown>;
   waitFor?(args: { selector: string; state?: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
   click?(args: { selector: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
+  clickText?(args: { text: string; selector?: string | null; exact?: boolean; timeoutMs?: number | null }): Promise<unknown>;
   fill?(args: { selector: string; value: unknown; timeoutMs?: number | null; redact?: boolean; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
   press?(args: { selector?: string | null; key: string; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<unknown>;
   extract?(args: { selector: string; mode?: string; attribute?: string | null; timeoutMs?: number | null; targetIdentity?: TargetIdentity | null }): Promise<{ value: unknown }>;

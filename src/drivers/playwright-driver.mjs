@@ -145,6 +145,10 @@ function createDriverFromPage({ page, context = null, browser = null, ownsBrowse
       await locator.click({ timeout: timeoutMs });
       return { selector, target: await describeTarget(locator, target) };
     },
+    async clickText({ text, selector = null, exact = true, timeoutMs }) {
+      const result = await waitForTextTarget(page, { text, selector, exact, timeoutMs });
+      return result;
+    },
     async fill({ selector, value, timeoutMs, redact = false, targetIdentity = null }) {
       const { locator, target } = await resolveTargetLocator(page, { selector, timeoutMs, targetIdentity });
       const stringValue = String(value);
@@ -478,6 +482,112 @@ async function resolveTargetLocator(page, { selector, timeoutMs, targetIdentity 
       attempts
     }
   });
+}
+
+async function waitForTextTarget(page, { text, selector = null, exact = true, timeoutMs }) {
+  const deadline = Date.now() + Math.max(500, Number(timeoutMs ?? 10_000));
+  let last = null;
+  while (Date.now() <= deadline) {
+    last = await page.evaluate(clickTextInPage, { text, selector, exact, click: false });
+    if (last?.ok) {
+      return page.evaluate(clickTextInPage, { text, selector, exact, click: true });
+    }
+    await page.waitForTimeout(120);
+  }
+  throw new BrowserActionError(`Text not found: ${text}`, {
+    details: {
+      reason: "text_not_found",
+      text,
+      selector,
+      attempts: last?.attempts ?? []
+    }
+  });
+}
+
+function clickTextInPage({ text, selector = null, exact = true, click = false } = {}) {
+  const wanted = cleanTextForClick(text);
+  const query = selector || 'a,button,[role="button"],[tabindex],span,div';
+  const nodes = Array.from(document.querySelectorAll(query)).slice(0, 4000);
+  const candidates = nodes
+    .map((node, index) => scoreTextClickCandidate(node, { wanted, exact, index }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const top = candidates[0];
+  if (!top) {
+    return {
+      ok: false,
+      attempts: [{ selector: query, matchCount: nodes.length, visibleCount: nodes.filter(isVisibleForClick).length }]
+    };
+  }
+  if (click) {
+    top.clickElement.scrollIntoView({ block: "center", inline: "center" });
+    top.clickElement.click();
+  }
+  return {
+    ok: true,
+    selector: query,
+    clicked: Boolean(click),
+    text: wanted,
+    target: {
+      strategy: "text",
+      index: top.index,
+      count: nodes.length,
+      visibleCount: nodes.filter(isVisibleForClick).length,
+      score: top.score,
+      secondScore: candidates[1]?.score ?? 0,
+      tagName: top.node.nodeName.toLowerCase(),
+      clickTagName: top.clickElement.nodeName.toLowerCase(),
+      text: top.text
+    },
+    url: location.href
+  };
+}
+
+function scoreTextClickCandidate(node, { wanted, exact, index }) {
+  const visible = isVisibleForClick(node);
+  if (!visible || !wanted) return { node, clickElement: node, index, score: 0, text: "" };
+  const text = cleanTextForClick([
+    node.getAttribute("aria-label"),
+    node.getAttribute("title"),
+    node.textContent
+  ].filter(Boolean).join(" "));
+  if (!text) return { node, clickElement: node, index, score: 0, text };
+  const exactMatch = text === wanted;
+  const containsMatch = text.includes(wanted);
+  if (exact && !exactMatch) return { node, clickElement: node, index, score: 0, text };
+  if (!exact && !exactMatch && !containsMatch) return { node, clickElement: node, index, score: 0, text };
+  const clickElement = clickableAncestorForText(node);
+  let score = exactMatch ? 100 : 60;
+  score += clickElement === node ? 0 : 12;
+  score += isInteractiveForText(clickElement) ? 18 : 0;
+  score -= Math.min(Math.max(text.length - wanted.length, 0), 80);
+  return { node, clickElement, index, score, text };
+}
+
+function clickableAncestorForText(node) {
+  let current = node;
+  for (let depth = 0; current && depth < 6; depth += 1) {
+    if (isInteractiveForText(current)) return current;
+    current = current.parentElement;
+  }
+  return node;
+}
+
+function isInteractiveForText(node) {
+  if (!node?.matches) return false;
+  if (node.matches('a,button,input,select,textarea,[role="button"],[tabindex]')) return true;
+  const style = getComputedStyle(node);
+  return style.cursor === "pointer" || typeof node.onclick === "function";
+}
+
+function isVisibleForClick(node) {
+  const rect = node.getBoundingClientRect();
+  const style = getComputedStyle(node);
+  return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+}
+
+function cleanTextForClick(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
 async function describeTarget(locator, target) {

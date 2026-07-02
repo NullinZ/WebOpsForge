@@ -2,6 +2,10 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { BrowserActionError, BrowserBlockedError } from "../errors.mjs";
 
+const EXTENSION_EXECUTOR_ACTIVE_MS = 5_000;
+const EXTENSION_EXECUTOR_RECENT_MS = 10 * 60_000;
+const EXTENSION_EXECUTOR_WAKE_TIMEOUT_MS = 35_000;
+
 export function createChromeProfileHandoffDriver({
   browserChannel = "chrome",
   profileDirectory = null,
@@ -51,6 +55,7 @@ export function createChromeProfileHandoffDriver({
     async close() {},
     waitFor: runViaExecutor("waitFor", () => currentUrl, executor, nativeExecutor),
     click: runViaExecutor("click", () => currentUrl, executor, nativeExecutor),
+    clickText: runViaExecutor("clickText", () => currentUrl, executor, nativeExecutor),
     fill: runViaExecutor("fill", () => currentUrl, executor, nativeExecutor),
     press: runViaExecutor("press", () => currentUrl, executor, nativeExecutor),
     extract: runViaExecutor("extract", () => currentUrl, executor, nativeExecutor),
@@ -146,14 +151,15 @@ function normalizeHttpUrl(url) {
 function runViaExecutor(action, getCurrentUrl, executor, nativeExecutor) {
   return async (params = {}) => {
     const currentUrl = getCurrentUrl?.() ?? null;
-    if (executor?.run && shouldUseExtensionExecutor(executor)) {
+    const extensionState = getExtensionExecutorState(executor);
+    if (executor?.run && extensionState.use) {
       try {
         const result = await executor.run({
           action,
           currentUrl,
           params
         }, {
-          timeoutMs: params.timeoutMs
+          timeoutMs: extensionState.needsWake ? extensionWakeTimeout(params.timeoutMs) : params.timeoutMs
         });
         return {
           ...result,
@@ -172,12 +178,27 @@ function runViaExecutor(action, getCurrentUrl, executor, nativeExecutor) {
   };
 }
 
-function shouldUseExtensionExecutor(executor) {
-  if (typeof executor.status !== "function") return true;
+function getExtensionExecutorState(executor) {
+  if (!executor?.run) return { use: false, needsWake: false };
+  if (typeof executor.status !== "function") return { use: true, needsWake: false };
   const status = executor.status();
-  if (!status?.lastSeenAt) return false;
+  if (Number(status?.pending) > 0 || Number(status?.active) > 0) {
+    return { use: true, needsWake: false };
+  }
+  if (!status?.lastSeenAt) return { use: false, needsWake: false };
   const lastSeenMs = new Date(status.lastSeenAt).getTime();
-  return Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs < 5000;
+  if (!Number.isFinite(lastSeenMs)) return { use: false, needsWake: false };
+  const ageMs = Date.now() - lastSeenMs;
+  return {
+    use: ageMs < EXTENSION_EXECUTOR_RECENT_MS,
+    needsWake: ageMs >= EXTENSION_EXECUTOR_ACTIVE_MS
+  };
+}
+
+function extensionWakeTimeout(timeoutMs) {
+  const requested = Number(timeoutMs);
+  if (!Number.isFinite(requested) || requested <= 0) return EXTENSION_EXECUTOR_WAKE_TIMEOUT_MS;
+  return Math.max(requested, EXTENSION_EXECUTOR_WAKE_TIMEOUT_MS);
 }
 
 function isExtensionUnavailable(error) {

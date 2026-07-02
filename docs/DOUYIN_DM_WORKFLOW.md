@@ -20,6 +20,7 @@ The runnable template is [examples/douyin-dm-workflow.mjs](../examples/douyin-dm
 ## New Generic Actions
 
 - `checkSession`: checks an authenticated marker and optional logged-out marker. If the logged-out marker is visible, or the authenticated marker cannot be found, the run blocks as `login_required`.
+- `clickText`: clicks a visible text label and prefers the nearest interactive ancestor. In the Douyin template it is used for `私信` and the target group name, where selectors are less stable than visible labels.
 - `setOutput`: writes a templated value into workflow outputs. In the Douyin template it creates `outputs.replyDraft` from `outputs.latestMessage`.
 
 These actions are generic and can be reused for other logged-in web operations.
@@ -47,10 +48,17 @@ Expected behavior:
 2. Import `examples/douyin-dm-workflow.bundle.json`.
 3. Use a dedicated Playwright profile or a controlled Chrome profile for Douyin.
 4. Log in manually in that profile. Do not store passwords in workflow JSON.
-5. Use the picker to replace the template selectors in `defaultRun.input`:
+5. For front Chrome execution, reload the unpacked `WebOps Forge Picker` extension after changing extension files, then run:
+
+   ```bash
+   npm run douyin:preflight -- --wait 60 --run-smoke
+   ```
+
+   The smoke is read-only: it verifies Studio, extension executor freshness, the configured Chrome profile, Douyin handoff, and `clickText("私信")`. It does not read message text or send a reply.
+6. Use the picker to replace the template selectors in `defaultRun.input`:
    - `accountSelector`
    - `loggedOutSelector`
-   - `dmEntrySelector`
+   - `dmEntryText`
    - `conversationListSelector`
    - `groupSelector`
    - `messageListSelector`
@@ -58,8 +66,8 @@ Expected behavior:
    - `latestMessageTextSelector`
    - `replyBoxSelector`
    - `sendButtonSelector`
-6. Keep `context.approvals.sendDouyinReply` unset or false for the first real run. The run should block at approval after extracting and drafting the reply.
-7. After verifying the evidence and reply text, rerun with approval enabled to send.
+7. Keep `context.approvals.sendDouyinReply` unset or false for the first real run. The run should block at approval after extracting and drafting the reply.
+8. After verifying the evidence and reply text, rerun with approval enabled to send.
 
 ## Known Boundaries
 

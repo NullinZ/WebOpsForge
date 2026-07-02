@@ -26,21 +26,14 @@ export const douyinDmWorkflow = defineWorkflow({
       loggedOutSelector: "{{input.loggedOutSelector}}",
       name: "session"
     },
-    { id: "openMessages", action: "click", selector: "{{input.dmEntrySelector}}" },
+    { id: "openMessages", action: "clickText", text: "{{input.dmEntryText}}" },
     { id: "waitConversationList", action: "waitFor", selector: "{{input.conversationListSelector}}" },
     {
       id: "openTargetGroup",
-      action: "click",
+      action: "clickText",
+      text: "{{input.groupName}}",
       selector: "{{input.groupSelector}}",
-      targetIdentity: {
-        version: 1,
-        text: "{{input.groupName}}",
-        matchPolicy: {
-          minScore: 18,
-          ambiguityMargin: 4,
-          requireVisible: true
-        }
-      }
+      exact: true
     },
     { id: "waitMessages", action: "waitFor", selector: "{{input.messageListSelector}}" },
     {
@@ -91,7 +84,7 @@ export const douyinDmDefaultRun = {
     groupName: "家具大师展厅总部",
     accountSelector: ".douyin-account",
     loggedOutSelector: ".douyin-login-button",
-    dmEntrySelector: ".douyin-dm-entry",
+    dmEntryText: "私信",
     conversationListSelector: ".conversation-list",
     groupSelector: ".conversation-item",
     messageListSelector: ".message-list",

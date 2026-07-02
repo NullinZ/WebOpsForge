@@ -756,6 +756,7 @@ const ACTION_LABELS = {
     checkSession: "Check session",
     checkpoint: "Checkpoint",
     click: "Click",
+    clickText: "Click text",
     extract: "Extract",
     extractDetail: "Extract detail",
     extractList: "Extract list",
@@ -777,6 +778,7 @@ const ACTION_LABELS = {
     checkSession: "检查登录态",
     checkpoint: "检查点",
     click: "点击",
+    clickText: "按文本点击",
     extract: "提取",
     extractDetail: "提取详情",
     extractList: "提取列表",
@@ -797,6 +799,7 @@ const ACTION_PICKER_VALUES = {
     "goto",
     "waitFor",
     "click",
+    "clickText",
     "fill",
     "press",
     "extract",
@@ -818,6 +821,7 @@ const ACTION_PICKER_VALUES = {
     "goto",
     "waitFor",
     "click",
+    "clickText",
     "fill",
     "press",
     "extract",
@@ -4458,6 +4462,7 @@ function actionToWorkflowStep(action) {
   }
   const id = slugify(action.id);
   if (action.actionType === "goto") return { id, action: "goto", url: action.valueTemplate || pageUrlForAction(action) };
+  if (action.actionType === "clickText") return { id, action: "clickText", text: action.valueTemplate || action.name || id, selector: action.selector || null };
   if (action.actionType === "fill") return { id, action: "fill", selector: action.selector, value: action.valueTemplate };
   if (action.actionType === "waitFor") return { id, action: "waitFor", selector: action.selector };
   if (action.actionType === "press") return { id, action: "press", selector: action.selector || null, key: action.valueTemplate || "Enter" };

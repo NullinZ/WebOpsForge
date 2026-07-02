@@ -21,7 +21,9 @@ The picker is intentionally not a simple "copy selector" tool. It captures an el
 
 The same extension now executes browser actions for an already-open Chrome profile after Studio hands off the target URL to the front browser. This is used when the profile is locked by normal Chrome and Playwright cannot safely take over the user data directory.
 
-Supported executor actions include `fill`, `click`, `waitFor`, `press`, `extract`, `extractList`, `extractDetail`, and `extractMedia`. Run logs show `via: chrome-extension-executor`, selector match counts, and actual filled values when the extension completes a job.
+Supported executor actions include `fill`, `click`, `clickText`, `waitFor`, `press`, `extract`, `extractList`, `extractDetail`, `extractMedia`, and `checkSession`. Run logs show `via: chrome-extension-executor`, selector match counts, and actual filled values when the extension completes a job.
+
+The extension uses short in-memory polling while its service worker is awake and a Chrome alarm wake-up as a fallback. If front Chrome execution stops reporting fresh executor heartbeats after extension code or manifest changes, reload the unpacked extension in `chrome://extensions`.
 
 ## Element Identity
 

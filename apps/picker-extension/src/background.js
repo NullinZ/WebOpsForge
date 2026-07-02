@@ -6,6 +6,8 @@ const SIDE_PANEL_PATH = "src/sidepanel.html";
 const SESSION_CACHE_MS = 1200;
 const EXECUTOR_POLL_IDLE_MS = 800;
 const EXECUTOR_POLL_BUSY_MS = 120;
+const EXECUTOR_ALARM_NAME = "webops-forge-executor-poll";
+const EXECUTOR_ALARM_PERIOD_MINUTES = 0.5;
 
 let cachedPickerSession = null;
 let sessionCacheAt = 0;
@@ -15,15 +17,24 @@ let executorPollBusy = false;
 
 chrome.runtime.onInstalled.addListener(() => {
   initializeSidePanel().catch(() => {});
+  ensureExecutorAlarm();
   startExecutorPolling();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   initializeSidePanel().catch(() => {});
+  ensureExecutorAlarm();
   startExecutorPolling();
 });
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+ensureExecutorAlarm();
+startExecutorPolling();
+
+chrome.alarms?.onAlarm?.addListener((alarm) => {
+  if (alarm?.name !== EXECUTOR_ALARM_NAME) return;
+  startExecutorPolling();
+});
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
@@ -488,6 +499,16 @@ async function postPickerEvent(event) {
 function startExecutorPolling() {
   if (executorPollTimer) return;
   executorPollTimer = setTimeout(pollExecutorJob, 50);
+}
+
+function ensureExecutorAlarm() {
+  try {
+    chrome.alarms?.create?.(EXECUTOR_ALARM_NAME, {
+      periodInMinutes: EXECUTOR_ALARM_PERIOD_MINUTES
+    });
+  } catch (_) {
+    // The regular polling path still works while the service worker is alive.
+  }
 }
 
 function scheduleExecutorPoll(delayMs) {

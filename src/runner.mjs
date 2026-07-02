@@ -146,6 +146,8 @@ export class WebOpsRunner {
         return this.driver.waitFor({ selector: step.selector, state: step.state ?? "visible", timeoutMs, targetIdentity: step.targetIdentity ?? null });
       case "click":
         return this.driver.click({ selector: step.selector, timeoutMs, targetIdentity: step.targetIdentity ?? null });
+      case "clickText":
+        return this.#clickText(step, timeoutMs);
       case "fill":
         return this.driver.fill({ selector: step.selector, value: step.value, timeoutMs, redact: Boolean(step.redact), targetIdentity: step.targetIdentity ?? null });
       case "press":
@@ -219,6 +221,21 @@ export class WebOpsRunner {
       });
     }
     return { ok: true, selector: step.selector, includes: step.includes };
+  }
+
+  async #clickText(step, timeoutMs) {
+    if (!this.driver.clickText) {
+      throw new BrowserActionError(`Driver does not support clickText`, {
+        stepId: step.id,
+        details: { reason: "unsupported_driver_action", action: "clickText" }
+      });
+    }
+    return this.driver.clickText({
+      text: step.text,
+      selector: step.selector ?? null,
+      exact: step.exact !== false,
+      timeoutMs
+    });
   }
 
   async #checkSession(step, timeoutMs) {

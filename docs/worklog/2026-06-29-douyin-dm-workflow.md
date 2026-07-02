@@ -2,11 +2,11 @@
 
 ## 恢复入口
 
-- 当前阶段：Phase 4 - 验收整理
-- 下一步：如需真实抖音验证，用登录后的本机 profile 替换模板 selector，先运行到 approval 阻断点，再决定是否批准发送。
+- 当前阶段：Phase 5 - 真实 Chrome 扩展执行器验证
+- 下一步：在本机 Chrome 手动 reload `onmhpnckkgnegfhhjfeemjjjhbialeca` WebOps Forge Picker 扩展后，重新运行 `live-douyin-local-chrome-clicktext-smoke`，确认 `clickText("私信")` 通过 `chrome-extension-executor` 落到已登录的 `chrome-default`。
 - 状态文件：docs/worklog/state/2026-06-29-douyin-dm-workflow.json
 - 证据目录：backups/douyin-dm-workflow-20260629/
-- 最后更新时间：2026-06-29T11:45:54+08:00
+- 最后更新时间：2026-07-03T01:19:39+08:00
 
 ## 范围
 
@@ -45,6 +45,12 @@
 | 2026-06-29T11:44:30+08:00 | Phase 3 | 用隔离数据目录启动 Studio，导入 bundle、校验 workflow、排 dry-run。 | API 健康正常；导入 1 个 workflow；workflow 校验 14 步；dry-run completed。 | backups/douyin-dm-workflow-20260629/studio-data/ |
 | 2026-06-29T11:45:00+08:00 | Phase 3 | 用 Playwright 打开 `http://127.0.0.1:4187`，切到 graph 标签并打开动作菜单。 | UI 动作菜单包含 `checkSession` 和 `setOutput`。 | backups/douyin-dm-workflow-20260629/studio-action-picker.png |
 | 2026-06-29T11:50:00+08:00 | Phase 3 | 通过 Chrome 做只读真实抖音探测。 | 抖音页面最终停在 `https://www.douyin.com/jingxuan`；浏览器自动化在页面加载/DOM 读取前超时，未到登录态或私信读取步骤；未使用账号信息，未发送消息。 | Chrome handoff tab |
+| 2026-07-03T00:58:38+08:00 | Phase 5 | 在默认 Studio `4177` 运行 `live-douyin-local-chrome-smoke`。 | 已登录本机 Chrome 存在抖音标签，但 run `run_209f81fb2f4f46b591` 在 `front_chrome_tab_not_found` 阻断；根因是扩展 worker 睡眠后 5 秒心跳门槛太短，运行器回退到 AppleScript 路径。 | `.webops-forge/runs/run_209f81fb2f4f46b591/` |
+| 2026-07-03T01:03:51+08:00 | Phase 5 | 修复 front Chrome 扩展执行器选择和唤醒逻辑，并重启默认 Studio `4177`。 | handoff driver 对最近见过但睡眠的扩展给 35 秒唤醒窗口；Picker 扩展新增 `alarms` 权限和 alarm 兜底轮询；`npm run check` 通过 48 项测试。Chrome 安全策略阻止自动打开 `chrome://extensions`，扩展 reload 需用户手动完成。 | `src/drivers/chrome-profile-handoff-driver.mjs`, `apps/picker-extension/src/background.js`, `apps/picker-extension/manifest.json` |
+| 2026-07-03T01:10:55+08:00 | Phase 5 | 新增通用 `clickText` 动作并重启默认 Studio `4177`。 | `clickText` 支持 dry-run、Playwright、front Chrome extension executor 和 Studio action picker；抖音模板改用 `clickText` 点击“私信”和目标群名；`npm test` 50 项通过，`node examples/douyin-dm-workflow.mjs` dry-run 通过。重启后扩展 35 秒内仍无心跳，需用户 reload unpacked extension 后再跑真实 smoke。 | `src/workflow.mjs`, `src/runner.mjs`, `apps/picker-extension/src/content.js`, `examples/douyin-dm-workflow.mjs` |
+| 2026-07-03T01:14:13+08:00 | Phase 5 | 补齐 `clickText` 的原生 Chrome AppleScript fallback，并让扩展 service worker 每次被唤醒时主动启动轮询。 | `npm run check` 通过 51 项测试；默认 Studio `4177` 已重启加载最新代码。扩展 executor 仍为 `lastSeenAt:null`，说明仍需用户手动 reload 已安装 unpacked extension。 | `src/drivers/mac-chrome-applescript-executor.mjs`, `apps/picker-extension/src/background.js`, `test/webops-forge.test.mjs` |
+| 2026-07-03T01:16:47+08:00 | Phase 5 | 新增并运行 `examples/douyin-live-preflight.mjs`。 | `npm run check` 通过 51 项测试并语法检查 preflight；`npm run douyin:preflight -- --wait 2` 明确返回 Studio 正常、`chrome-default` ready、executor `lastSeenAt:null`、nextAction 为 reload unpacked extension。 | `examples/douyin-live-preflight.mjs`, `package.json` |
+| 2026-07-03T01:19:39+08:00 | Phase 5 | 将 Picker 扩展版本提升到 `0.1.5`，并让 preflight 校验心跳版本。 | `npm run check` 通过 51 项测试；`npm run douyin:preflight -- --wait 2 --run-smoke` 未误跑 smoke，明确报告 Chrome 当前仍是 `0.1.4`，本地期望 `0.1.5`，需要 reload unpacked extension。 | `apps/picker-extension/manifest.json`, `examples/douyin-live-preflight.mjs` |
 
 ## 决策记录
 
@@ -70,11 +76,20 @@
 - 修复：新增 `setOutput`，可用模板把 `outputs.latestMessage` 写入 `outputs.replyDraft`。
 - 验证：`checks session state and writes templated outputs` 测试通过；抖音 dry-run 示例产出 `replyDraft`。
 
+### WOF-DYDM-003：文本入口点击过度依赖脆弱 selector
+
+- 现象：真实 safe smoke 中，`a,button,span,div` 加文本指纹可以走扩展执行器，但“私信”入口点击结果不稳定，仍需要 picker 精确选择或更强的文本点击语义。
+- 原因：抖音入口和群名这类控件的 DOM 结构容易变化，宽泛 selector 会命中内部文本节点或非理想祖先。
+- 修复：新增 `clickText` 动作，按可见文本匹配并优先点击最近可交互祖先；接入 dry-run、Playwright、front Chrome extension executor、Studio action picker 和抖音模板。
+- 验证：`npm test` 通过 50 项；`node examples/douyin-dm-workflow.mjs` dry-run 通过并执行 `clickText` 打开私信和目标群步骤。
+
 ## 验证记录
 
 - 命令：`node examples/douyin-dm-workflow.mjs` 通过，dry-run completed。
-- 命令：`npm test` 通过，47 pass / 0 fail。
-- 命令：`npm run check` 通过，47 pass / 0 fail，并完成 `examples/dry-run-search.mjs`。
+- 命令：`npm test` 通过，51 pass / 0 fail。
+- 命令：`npm run check` 通过，51 pass / 0 fail，并完成 `examples/dry-run-search.mjs`。
+- 命令：`npm run douyin:preflight -- --wait 2` 返回 exit 2，证明当前阻断点是 extension executor 未连回，而不是 Studio 或 profile 缺失。
+- 命令：`npm run douyin:preflight -- --wait 2 --run-smoke` 返回 exit 2，证明当前 Chrome 扩展仍是 `0.1.4`，本地期望 `0.1.5`。
 - API：隔离 Studio `http://127.0.0.1:4187` `/api/health` ok；`/api/import` 导入 1 个 workflow；`/api/workflows/validate` 校验 14 步；`/api/workflows/:id/runs` dry-run completed。
 - 浏览器：Playwright 验证 Studio graph 动作菜单包含 `checkSession` 与 `setOutput`；截图 `backups/douyin-dm-workflow-20260629/studio-action-picker.png`。
 - 真实抖音：未执行真实发送；真实登录/验证码/短信/风控需要用户在本机浏览器 profile 中完成。用户提供的登录信息未写入仓库或日志。

@@ -177,14 +177,81 @@ function currentValue(element) {
   if ("value" in element) return element.value;
   return element.textContent || "";
 }
-function extractValue(element, spec) {
-  const mode = spec.mode || "text";
-  if (mode === "html") return element.innerHTML;
-  if (mode === "value") return currentValue(element);
-  if (mode === "attribute") return element.getAttribute(spec.attribute || spec.attr || "") || "";
-  return clean(element.textContent || currentValue(element));
-}
-try {
+  function extractValue(element, spec) {
+    const mode = spec.mode || "text";
+    if (mode === "html") return element.innerHTML;
+    if (mode === "value") return currentValue(element);
+    if (mode === "attribute") return element.getAttribute(spec.attribute || spec.attr || "") || "";
+    return clean(element.textContent || currentValue(element));
+  }
+  function isInteractiveForText(node) {
+    if (!node || !node.matches) return false;
+    if (node.matches('a,button,input,select,textarea,[role="button"],[tabindex]')) return true;
+    const style = getComputedStyle(node);
+    return style.cursor === "pointer" || typeof node.onclick === "function";
+  }
+  function clickableAncestorForText(node) {
+    let current = node;
+    for (let depth = 0; current && depth < 6; depth += 1) {
+      if (isInteractiveForText(current)) return current;
+      current = current.parentElement;
+    }
+    return node;
+  }
+  function resolveTextTarget() {
+    const wanted = clean(params.text || "");
+    const exact = params.exact !== false;
+    const selector = params.selector || 'a,button,[role="button"],[tabindex],span,div';
+    let nodes = [];
+    try {
+      nodes = Array.from(document.querySelectorAll(selector)).slice(0, 4000);
+    } catch (_) {
+      return { element: null, clickElement: null, selector, attempts: [{ selector, status: "invalid_selector", matchCount: 0, visibleCount: 0 }] };
+    }
+    const visibleCount = nodes.filter(visible).length;
+    const candidates = nodes.map((node, index) => {
+      if (!wanted || !visible(node)) return { node, clickElement: node, index, score: 0, text: "" };
+      const text = clean([node.getAttribute("aria-label"), node.getAttribute("title"), node.textContent].filter(Boolean).join(" "));
+      const exactMatch = text === wanted;
+      const containsMatch = text.includes(wanted);
+      if (exact && !exactMatch) return { node, clickElement: node, index, score: 0, text };
+      if (!exact && !exactMatch && !containsMatch) return { node, clickElement: node, index, score: 0, text };
+      const clickElement = clickableAncestorForText(node);
+      let score = exactMatch ? 100 : 60;
+      score += clickElement === node ? 0 : 12;
+      score += isInteractiveForText(clickElement) ? 18 : 0;
+      score -= Math.min(Math.max(text.length - wanted.length, 0), 80);
+      return { node, clickElement, index, score, text };
+    }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);
+    const top = candidates[0];
+    return {
+      element: top?.node || null,
+      clickElement: top?.clickElement || null,
+      selector,
+      text: wanted,
+      attempts: [{ selector, status: top ? "matched" : "not_found", matchCount: nodes.length, visibleCount, topScore: top?.score || 0, secondScore: candidates[1]?.score || 0 }],
+      target: top ? {
+        selector,
+        requestedSelector: params.selector || "",
+        strategy: "text",
+        index: top.index,
+        count: nodes.length,
+        visibleCount,
+        score: top.score,
+        secondScore: candidates[1]?.score || 0,
+        tagName: top.node.nodeName.toLowerCase(),
+        clickTagName: top.clickElement.nodeName.toLowerCase(),
+        text: top.text
+      } : {
+        selector,
+        requestedSelector: params.selector || "",
+        strategy: "text",
+        count: nodes.length,
+        visibleCount
+      }
+    };
+  }
+  try {
   if (action === "waitFor") {
     const resolved = requireTarget();
     const state = params.state || "visible";
@@ -206,6 +273,18 @@ try {
     resolved.element.scrollIntoView({ block: "center", inline: "center" });
     resolved.element.click();
     return JSON.stringify({ ok: true, result: { selector: resolved.selector, clicked: true, target: resolved.target, url: location.href } });
+  }
+  if (action === "clickText") {
+    const resolved = resolveTextTarget();
+    if (!resolved.clickElement) {
+      const error = new Error("Text not found: " + (params.text || ""));
+      error.reason = "text_not_found";
+      error.details = { text: params.text || "", selector: params.selector || "", attempts: resolved.attempts };
+      throw error;
+    }
+    resolved.clickElement.scrollIntoView({ block: "center", inline: "center" });
+    resolved.clickElement.click();
+    return JSON.stringify({ ok: true, result: { selector: resolved.selector, text: resolved.text, clicked: true, target: resolved.target, url: location.href } });
   }
   if (action === "press") {
     const resolved = params.selector ? requireTarget() : { element: document.activeElement, selector: "", target: null };
