@@ -7,7 +7,7 @@ import {
   studioAuthConfigFromEnv
 } from "../apps/studio/auth-gate.mjs";
 
-function request({ url = "/api/runtime", host = "123.120.59.216", headers = {}, remoteAddress = "203.0.113.20" } = {}) {
+function request({ url = "/api/runtime", host = "203.0.113.10", headers = {}, remoteAddress = "203.0.113.20" } = {}) {
   return {
     url,
     headers: { host, ...headers },
