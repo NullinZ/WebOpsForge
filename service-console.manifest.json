@@ -1,0 +1,119 @@
+{
+  "schema_version": "ahouse.service-console/v2",
+  "uid": "ahouse.project/webops-forge",
+  "name": "WebOpsForge",
+  "description": "可复现、可审计的浏览器操作工作流编排与执行工作台。",
+  "type": "tool",
+  "owner": "ahouse-platform",
+  "system": "ahouse-operations",
+  "domain": "web-operations",
+  "lifecycle": "development",
+  "tags": ["webops", "browser", "workflow", "service-console"],
+  "script_discovery": "manifest-only",
+  "environments": [
+    {
+      "id": "local-mac",
+      "label": "Mac 本机",
+      "kind": "local-mac",
+      "base_url": "http://127.0.0.1:4177",
+      "default": true
+    },
+    {
+      "id": "ahprojectmgr",
+      "label": "AHProjectMgr 统一入口",
+      "kind": "local-mac",
+      "base_url": "http://127.0.0.1:9999/tools/web-opsforge/"
+    }
+  ],
+  "scripts": [
+    {
+      "id": "start-local",
+      "label": "本地启动 · WebOps Forge :4177",
+      "mode": "local",
+      "command": "npm run start",
+      "path": "package.json",
+      "environment": "local-mac",
+      "health_checks": ["local-health", "registered-entry"],
+      "quick_action": true,
+      "quick_label": "本地启动",
+      "warning": "启动 Studio 与本地执行队列；不会自动运行已保存工作流。"
+    },
+    {
+      "id": "verify-code",
+      "label": "代码验收",
+      "mode": "local",
+      "command": "npm run check",
+      "path": "package.json",
+      "environment": "local-mac",
+      "quick_action": true,
+      "quick_label": "代码验收"
+    }
+  ],
+  "access_urls": [
+    {
+      "id": "registered-entry",
+      "label": "WebOps Forge Studio",
+      "url": "http://127.0.0.1:9999/tools/web-opsforge/",
+      "environment": "ahprojectmgr",
+      "primary": true
+    },
+    {
+      "id": "local-direct",
+      "label": "本机直连诊断",
+      "url": "http://127.0.0.1:4177/",
+      "environment": "local-mac"
+    }
+  ],
+  "health_checks": [
+    {
+      "id": "local-health",
+      "label": "Studio readiness",
+      "type": "http",
+      "kind": "readiness",
+      "url": "http://127.0.0.1:4177/api/health",
+      "expected_status": [200],
+      "timeout_seconds": 5,
+      "required": true,
+      "environment": "local-mac"
+    },
+    {
+      "id": "registered-entry",
+      "label": "统一入口 smoke",
+      "type": "http",
+      "kind": "smoke",
+      "url": "http://127.0.0.1:9999/tools/web-opsforge/api/health",
+      "expected_status": [200],
+      "timeout_seconds": 5,
+      "required": false,
+      "environment": "ahprojectmgr"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "node-lts",
+      "label": "Node.js 18+",
+      "type": "runtime",
+      "required": true,
+      "environment": "local-mac"
+    }
+  ],
+  "deployments": [
+    {
+      "id": "local-mac",
+      "label": "Mac 本机",
+      "mode": "local",
+      "target": "127.0.0.1:4177",
+      "environment": "local-mac",
+      "script_id": "start-local"
+    }
+  ],
+  "smoke_tests": [
+    {
+      "id": "health-smoke",
+      "label": "Studio health smoke",
+      "type": "http",
+      "url": "http://127.0.0.1:4177/api/health",
+      "expected_status": [200]
+    }
+  ]
+}

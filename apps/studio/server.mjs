@@ -32,7 +32,7 @@ const queue = createRunQueue({
 const server = http.createServer(async (req, res) => {
   try {
     const incomingUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
-    const route = matchBasePath(incomingUrl.pathname);
+    const route = matchBasePath(incomingUrl.pathname, req.headers["x-forwarded-prefix"]);
     const url = new URL(incomingUrl.toString());
     url.pathname = route.pathname;
     if (req.method === "OPTIONS" && route.pathname.startsWith("/api/")) {
@@ -616,8 +616,14 @@ function normalizeBasePath(value) {
   return normalized;
 }
 
-function matchBasePath(pathname) {
-  for (const basePath of basePaths) {
+function matchBasePath(pathname, forwardedPrefix = "") {
+  const forwardedBasePath = normalizeBasePath(
+    Array.isArray(forwardedPrefix) ? forwardedPrefix[0] : forwardedPrefix
+  );
+  const candidates = forwardedBasePath && !basePaths.includes(forwardedBasePath)
+    ? [forwardedBasePath, ...basePaths]
+    : basePaths;
+  for (const basePath of candidates) {
     if (pathname === basePath || pathname.startsWith(`${basePath}/`)) {
       return {
         basePath,
