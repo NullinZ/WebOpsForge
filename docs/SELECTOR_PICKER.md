@@ -7,7 +7,7 @@ The picker is intentionally not a simple "copy selector" tool. It captures an el
 ## Flow
 
 1. Run Studio on `http://127.0.0.1:4177`.
-2. Load the Chrome extension from `/Users/nullin/GitHubO/WebOpsForge/apps/picker-extension`.
+2. Load the Chrome extension from `/Volumes/RuntimeDisk/AHResearch/WebOpsForge/apps/picker-extension`.
    When extension files change, reload the unpacked `WebOps Forge Picker` extension in `chrome://extensions`.
 3. In Studio, select the relevant node, ideally the `goto` step or a browser step after it, and click `Pick Node`.
 4. Studio creates a short-lived picker session with the inferred target URL from the nearest `goto`.

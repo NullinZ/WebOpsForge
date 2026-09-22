@@ -3,7 +3,7 @@
 ## 恢复入口
 
 - 当前阶段：完成
-- 下一步：加载 `/Users/nullin/GitHubO/WebOpsForge/apps/picker-extension` 后，在真实目标页面执行一次人工拾取验证
+- 下一步：加载 `/Volumes/RuntimeDisk/AHResearch/WebOpsForge/apps/picker-extension` 后，在真实目标页面执行一次人工拾取验证
 - 状态文件：docs/worklog/state/2026-06-22-selector-picker.json
 - 证据目录：backups/selector-picker-20260622/
 - 最后更新时间：2026-06-22T16:32:30+08:00
@@ -12,8 +12,8 @@
 
 - 目标：设计并落地 Chrome 前端元素拾取器，帮助 WebOpsForge Studio 节点配置动作，重点保存目标控件稳定特征，降低自动化找错元素风险。
 - 涉及仓库：
-  - /Users/nullin/GitHubO/WebOpsForge
-  - 本项目内置 `/Users/nullin/GitHubO/WebOpsForge/apps/picker-extension`
+  - /Volumes/RuntimeDisk/AHResearch/WebOpsForge
+  - 本项目内置 `/Volumes/RuntimeDisk/AHResearch/WebOpsForge/apps/picker-extension`
 - 涉及环境：本机 WebOpsForge Studio 4177；本机 Chrome 扩展。
 - 不做范围：不绕过平台登录、验证码、风控；不新增平台私有密钥；不改现有运行队列的基本执行模型。
 
@@ -151,4 +151,4 @@
 
 ## 后续登记
 
-- 需要在 Chrome 扩展管理页加载 `/Users/nullin/GitHubO/WebOpsForge/apps/picker-extension`，再在真实目标网页做一次人工拾取端到端验证。
+- 需要在 Chrome 扩展管理页加载 `/Volumes/RuntimeDisk/AHResearch/WebOpsForge/apps/picker-extension`，再在真实目标网页做一次人工拾取端到端验证。

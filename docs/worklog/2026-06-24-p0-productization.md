@@ -11,7 +11,7 @@
 ## 范围
 
 - 目标：按 P0 补全 WebOps Forge 商业化开源产品基础能力，优先形成统一的 H5 操作和结构化数据读取闭环。
-- 涉及仓库：/Users/nullin/GitHubO/WebOpsForge
+- 涉及仓库：/Volumes/RuntimeDisk/AHResearch/WebOpsForge
 - 涉及环境：本机 Studio `127.0.0.1:4177`、Node.js 测试、npm package dry-run。
 - 不做范围：不接入私有平台凭证；不写入业务账号、客户数据、平台私有 selector；不绕过 CAPTCHA/2FA/访问控制。
 

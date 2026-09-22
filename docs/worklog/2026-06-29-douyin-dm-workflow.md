@@ -11,7 +11,7 @@
 ## 范围
 
 - 目标：通过配置和必要改进，让 WebOpsForge 能跑通一条抖音 Web 自动化链路：打开抖音、检查登录态、进入右上角私信、找到“家具大师展厅总部”群、读取当前显示消息，并针对内容生成或执行回复。
-- 涉及仓库：/Users/nullin/GitHubO/WebOpsForge
+- 涉及仓库：/Volumes/RuntimeDisk/AHResearch/WebOpsForge
 - 涉及环境：本机 macOS、WebOpsForge Studio、Playwright/浏览器自动化运行器、可复用浏览器登录态。
 - 不做范围：不在仓库、日志、URL、前端代码或对话输出中保存抖音账号凭证；不绕过抖音风控或验证码；未确认前不自动向真实联系人发送不可撤回消息。
 
