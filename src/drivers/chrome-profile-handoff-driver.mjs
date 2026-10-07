@@ -10,6 +10,7 @@ export function createChromeProfileHandoffDriver({
   browserChannel = "chrome",
   profileDirectory = null,
   opener = spawnDetached,
+  activate = activateBrowser,
   executor = null,
   nativeExecutor = null
 } = {}) {
@@ -38,7 +39,7 @@ export function createChromeProfileHandoffDriver({
           }
         });
       }
-      await activateBrowser(appName).catch(() => {});
+      await activate(appName).catch(() => {});
       currentUrl = targetUrl;
       return {
         url: targetUrl,

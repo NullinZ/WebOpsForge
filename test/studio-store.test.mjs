@@ -418,6 +418,8 @@ test("run queue can explicitly hand goto-only Chrome profile debug runs to the f
     const calls = [];
     const queue = createRunQueue({
       store,
+      platform: "darwin",
+      chromeHandoffActivator: async () => {},
       chromeHandoffOpener: async (command, args, options) => {
         calls.push({ command, args, options });
       }
@@ -477,6 +479,8 @@ test("run queue reuses an already opened controlled profile browser session", as
     let handoffCalls = 0;
     const queue = createRunQueue({
       store,
+      platform: "darwin",
+      chromeHandoffActivator: async () => {},
       chromeHandoffOpener: async () => {
         handoffCalls += 1;
       },
@@ -555,6 +559,8 @@ test("run queue marks locked Chrome profiles as front Chrome blocked when no exe
     const queue = createRunQueue({
       store,
       chromeNativeExecutor: null,
+      platform: "darwin",
+      chromeHandoffActivator: async () => {},
       chromeHandoffOpener: async (command, args, options) => {
         calls.push({ command, args, options });
       }
@@ -622,6 +628,8 @@ test("run queue completes locked Chrome profile steps through the extension exec
     const executorCalls = [];
     const queue = createRunQueue({
       store,
+      platform: "darwin",
+      chromeHandoffActivator: async () => {},
       chromeHandoffOpener: async (command, args, options) => {
         calls.push({ command, args, options });
       },
