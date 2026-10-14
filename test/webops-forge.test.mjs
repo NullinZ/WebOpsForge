@@ -380,6 +380,7 @@ test("opens manual login through a reusable controlled profile session when prov
 test("hands goto URLs to a local Chrome profile", async () => {
   const calls = [];
   const driver = createChromeProfileHandoffDriver({
+    activate: async () => {},
     browserChannel: "chrome",
     profileDirectory: "Profile 2",
     opener: async (command, args, options) => {
@@ -415,6 +416,7 @@ test("hands front Chrome actions to an extension executor", async () => {
   const calls = [];
   const executorCalls = [];
   const driver = createChromeProfileHandoffDriver({
+    activate: async () => {},
     browserChannel: "chrome",
     profileDirectory: "Profile 2",
     opener: async (command, args, options) => {
@@ -450,6 +452,7 @@ test("hands front Chrome actions to an extension executor", async () => {
 test("hands front Chrome text clicks to an extension executor", async () => {
   const executorCalls = [];
   const driver = createChromeProfileHandoffDriver({
+    activate: async () => {},
     browserChannel: "chrome",
     profileDirectory: "Profile 2",
     opener: async () => {},
@@ -479,6 +482,7 @@ test("hands front Chrome text clicks to an extension executor", async () => {
 test("hands front Chrome session checks to an extension executor", async () => {
   const executorCalls = [];
   const driver = createChromeProfileHandoffDriver({
+    activate: async () => {},
     browserChannel: "chrome",
     profileDirectory: "Profile 2",
     opener: async () => {},
@@ -512,6 +516,7 @@ test("hands front Chrome actions to a native AppleScript executor when the exten
   const calls = [];
   const nativeCalls = [];
   const driver = createChromeProfileHandoffDriver({
+    activate: async () => {},
     browserChannel: "chrome",
     profileDirectory: "Profile 2",
     opener: async (command, args, options) => {
@@ -553,6 +558,7 @@ test("gives a recently seen sleeping extension executor a wake window", async ()
   const executorCalls = [];
   const nativeCalls = [];
   const driver = createChromeProfileHandoffDriver({
+    activate: async () => {},
     browserChannel: "chrome",
     profileDirectory: "Profile 2",
     opener: async () => {},

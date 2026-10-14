@@ -15,7 +15,7 @@ const DEFAULT_HUMAN_TIMING = {
 };
 const DEFAULT_BROWSER_CLOSE_DELAY_MS = 10_000;
 
-export function createRunQueue({ store, concurrency = 1, clock = () => new Date(), chromeHandoffOpener = null, chromeExtensionExecutor = null, chromeNativeExecutor = undefined, profileBrowserSessions = null }) {
+export function createRunQueue({ store, concurrency = 1, clock = () => new Date(), platform = process.platform, chromeHandoffActivator = null, chromeHandoffOpener = null, chromeExtensionExecutor = null, chromeNativeExecutor = undefined, profileBrowserSessions = null }) {
   const pending = [];
   const active = new Set();
   const controllers = new Map();
@@ -97,6 +97,8 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
     try {
       leasedProfile = await store.leaseProfile(run.profileId, runId);
       driver = await createDriver(run, leasedProfile, {
+        platform,
+        chromeHandoffActivator,
         chromeHandoffOpener,
         chromeExtensionExecutor,
         chromeNativeExecutor,
@@ -151,16 +153,17 @@ export function createRunQueue({ store, concurrency = 1, clock = () => new Date(
   }
 }
 
-async function createDriver(run, profile = null, { chromeHandoffOpener = null, chromeExtensionExecutor = null, chromeNativeExecutor = undefined, profileBrowserSessions = null, workflow = null } = {}) {
+async function createDriver(run, profile = null, { platform = process.platform, chromeHandoffActivator = null, chromeHandoffOpener = null, chromeExtensionExecutor = null, chromeNativeExecutor = undefined, profileBrowserSessions = null, workflow = null } = {}) {
   const mergedConfig = mergeDriverConfig(run.driverConfig ?? {}, profile);
   if (run.mode === "playwright" || profile?.mode === "playwright") {
     const sessionDriver = await profileBrowserSessions?.getDriver?.({ profile, run, overrides: run.driverConfig ?? {} });
     if (sessionDriver) return sessionDriver;
-    if (await shouldUseChromeProfileHandoff(run, profile, workflow)) {
+    if (await shouldUseChromeProfileHandoff(run, profile, workflow, platform)) {
       return createChromeProfileHandoffDriver({
         browserChannel: profile.browserChannel,
         profileDirectory: profile.profileDirectory,
         opener: chromeHandoffOpener ?? undefined,
+        activate: chromeHandoffActivator ?? undefined,
         executor: chromeExtensionExecutor ?? null,
         nativeExecutor: chromeNativeExecutor === undefined
           ? createMacChromeAppleScriptExecutor({ browserChannel: profile.browserChannel })
@@ -172,8 +175,8 @@ async function createDriver(run, profile = null, { chromeHandoffOpener = null, c
   return createDryRunDriver(mergedConfig);
 }
 
-async function shouldUseChromeProfileHandoff(run, profile, workflow = null) {
-  if (process.platform !== "darwin") return false;
+async function shouldUseChromeProfileHandoff(run, profile, workflow = null, platform = process.platform) {
+  if (platform !== "darwin") return false;
   if (!profile?.profileDirectory) return false;
   if (!["chrome", "chromium", "msedge"].includes(String(profile.browserChannel || "chrome"))) return false;
   const executableWorkflow = run.workflowOverride ?? workflow;
